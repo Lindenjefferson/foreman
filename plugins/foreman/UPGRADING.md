@@ -9,10 +9,10 @@ Cada versão diz de onde veio cada item (feedback de uma entrega real, revisão 
 Simplificação: os testes passam a rodar só localmente, antes de cada PR.
 
 - **Sai o `.github/workflows/testes.yml`**: o "Testar e validar" do `CLAUDE.md` ganha um quinto comando, a varredura de segredos da branch (`--range main..HEAD`), que era a única garantia do CI fora do alcance do `pre-commit`, e diz por que o risco é outro aqui. Os comentários do scanner e do teste deixam de citar o CI.
-- **Um marketplace por projeto, com o nome dele**: o `linden-plugins` passa a se chamar `foreman` e lista só o Foreman; o account-switcher ganha marketplace no próprio repositório, e uma mudança nele deixa de pedir commit aqui.
+- **O marketplace passa a se chamar `foreman`**, o nome do projeto, e lista só o Foreman.
 - **O histórico deixa de contar a renumeração**: sai a nota do topo, o item dela na 1.12.2 e a 1.12.1, que só corrigia essa nota; o `CLAUDE.md` e o README também deixam de citá-la.
 
-**Ao atualizar:** o marketplace muda de nome, então a skill `atualizar` não alcança esta versão. Termine ou pause a entrega em andamento e, uma vez na máquina, rode `claude plugin marketplace add Lindenjefferson/foreman`. Depois, em cada projeto, rode `claude plugin uninstall foreman@linden-plugins --scope local` e `claude plugin install foreman@foreman --scope local`, e no fim `claude plugin marketplace remove linden-plugins`. Os ledgers e os arquivos do projeto não mudam.
+**Ao atualizar:** instale `foreman@foreman` no lugar de `foreman@linden-plugins`.
 
 ## 1.38.1 — as sobras ditas por extenso, e sem falso positivo
 
