@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, tempfile, time
+import datetime, json, os, subprocess, sys, tempfile, time
 
 HOOKS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SCRIPT = os.path.join(HOOKS, "bash-guard.py")
@@ -207,7 +207,7 @@ for command in ("git checkout -- clean.txt", "git restore clean.txt", "git resto
     check(f"a delivery: passes {command!r}", run(repo, command)[1] is None, str(run(repo, command)))
 check("with no ledger, undoing a file with work not committed passes", run(loose, "git checkout -- x.txt")[1] is None)
 sh("git", "checkout", "--", "dirty.txt")
-sh(sys.executable, LEDGER_PY, "mode", "autonomous")
+sh(sys.executable, LEDGER_PY, "mode", "autonomous", "--until", (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=8)).isoformat(timespec="seconds"))
 for command in main_pushes + ("git push", "git merge feat/x", "git merge --no-ff feat/x"):
     check(f"autonomous, on the main branch: denied {command!r}", reaches_main(command))
 check("autonomous, on the main branch: denied 'git push origin @'", reaches_main("git push origin @"))
@@ -315,7 +315,7 @@ for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), 
              ("commit", "-q", "--allow-empty", "-m", "base")):
     sh("git", *args)
 sh(sys.executable, LEDGER_PY, "start", "--slug", "x")
-sh(sys.executable, LEDGER_PY, "mode", "autonomous")
+sh(sys.executable, LEDGER_PY, "mode", "autonomous", "--until", (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=8)).isoformat(timespec="seconds"))
 sh("git", "checkout", "-q", "-b", "feat/x")
 
 

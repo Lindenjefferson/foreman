@@ -61,6 +61,13 @@ for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), 
              ("commit", "-q", "--allow-empty", "-m", "base")):
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 
+# The mod records the account's usage beside the ledger, which bounds an autonomous night with no --until
+os.makedirs(os.path.join(repo, ".superpowers"), exist_ok=True)
+with open(os.path.join(repo, ".superpowers", "usage.json"), "w", encoding="utf-8") as handle:
+    reset = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2)).isoformat(timespec="seconds")
+    json.dump({"windows": {"five_hour": {"percent": 1, "resets_at": reset},
+                           "seven_day": {"percent": 1, "resets_at": reset}}}, handle)
+
 check("add before start is refused", add("dev", "DONE", "T1").returncode != 0)
 r = run("start", "--slug", "feature")
 check("start records the base", r.returncode == 0 and "started feature" in r.stdout, r.stderr)
@@ -1344,6 +1351,7 @@ check("a file still broken after the retry is unreadable",
 
 main_super = os.path.join(repo, ".superpowers")
 main_local = os.path.join(repo, "CLAUDE.local.md")
+recorded = open(os.path.join(main_super, "usage.json"), encoding="utf-8").read()
 with open(os.path.join(main_super, "usage.json"), "w", encoding="utf-8") as handle:
     json.dump({"windows": {"five_hour": window(90)}}, handle)
 with open(main_local, "w", encoding="utf-8") as handle:
@@ -1351,7 +1359,8 @@ with open(main_local, "w", encoding="utf-8") as handle:
 try:
     got = json.loads(run("status", "--json", cwd=task_tree).stdout)["usage"]
 finally:
-    os.remove(os.path.join(main_super, "usage.json"))
+    with open(os.path.join(main_super, "usage.json"), "w", encoding="utf-8") as handle:
+        handle.write(recorded)
     os.remove(main_local)
 check("from a task worktree, the default ledger reads the main worktree's usage.json and CLAUDE.local.md",
       got and got["windows"]["five_hour"]["percent"] == 90 and got["wait"] is None
@@ -2209,6 +2218,18 @@ with open(os.path.join(repo, NIGHT), "w", encoding="utf-8", newline="\n") as han
         handle.write(json.dumps(entry) + "\n")
 check("without --until, autonomous mode has no night", run("mode", "autonomous", ledger=NIGHT).returncode == 0
       and status(NIGHT)["night"] is None, status(NIGHT).get("night"))
+bare = os.path.join(repo, "u", "bare")
+os.makedirs(os.path.join(bare, ".superpowers"), exist_ok=True)
+BARE = "u/bare/.superpowers/ledger.jsonl"
+run("start", "--slug", "bare", ledger=BARE)
+r = run("mode", "autonomous", ledger=BARE)
+check("with no usage recorded, mode autonomous without --until is refused: nothing would bound the fix rounds",
+      r.returncode != 0 and "--until" in r.stderr and status(BARE)["autonomous"] is False, r.stderr)
+r = run("mode", "autonomous", "--until", (datetime.datetime.now() + datetime.timedelta(hours=8)).strftime("%H:%M"),
+        ledger=BARE)
+check("with no usage recorded, mode autonomous with --until is accepted",
+      r.returncode == 0 and status(BARE)["autonomous"] is True, r.stderr)
+check("mode supervised never needs --until", run("mode", "supervised", ledger=BARE).returncode == 0)
 check("--until is refused in supervised mode", run("mode", "supervised", "--until", "08:30", ledger=NIGHT).returncode != 0)
 check("an --until that is no time is refused", run("mode", "autonomous", "--until", "soon", ledger=NIGHT).returncode != 0)
 check("an --until already past is refused", run("mode", "autonomous", "--until", past, ledger=NIGHT).returncode != 0)

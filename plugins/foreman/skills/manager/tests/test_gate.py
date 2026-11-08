@@ -1,4 +1,4 @@
-import atexit, json, os, re, shutil, stat, subprocess, sys, tempfile, time
+import atexit, datetime, json, os, re, shutil, stat, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "..", "gate.py")
@@ -320,7 +320,7 @@ check("a deferred item with no decision: NOT READY",
 ledger_cmd("resolve", "--id", "D1", "--decision", "user: next delivery")
 ledger_cmd("add", "--agent", "dev", "--task", "fix-1", "--verdict", "DONE")
 ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
-ledger_cmd("mode", "autonomous")
+ledger_cmd("mode", "autonomous", "--until", (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=8)).isoformat(timespec="seconds"))
 ledger_cmd("note", "--text", "page size 50", "--validar", "--recommend", "confirm")
 ledger_cmd("note", "--text", "sort by date", "--validar", "--recommend", "confirm")
 ledger_cmd("validate", "--id", "V2", "--decision", "user: confirmed")

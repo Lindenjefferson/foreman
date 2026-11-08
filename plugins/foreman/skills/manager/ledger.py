@@ -283,7 +283,9 @@ Autonomous mode until a time
 
 mode autonomous --until records the time the user is back: HH:MM is the next time this machine's clock shows it
 (tomorrow when it is past today), or an ISO time with its offset; a time already past, or --until in supervised mode,
-is refused. While the latest mode entry carries it, status --json gives night: {until, seconds_left, expected, fits,
+is refused. With no valid usage.json beside the ledger, mode autonomous without --until is refused: the fix rounds
+have no limit in autonomous mode, and the night end or the usage pause is what bounds them. While the latest mode
+entry carries it, status --json gives night: {until, seconds_left, expected, fits,
 over, done_since}, else null. expected is each run's expected seconds from this delivery's measured runs, null before
 the first: dev is scope's median_task_seconds, reviewer and qa the median of their cycle runs (qa without --full), and
 qa_full the latest qa --full; fits says whether it ends before until (null when unknown). over is true once until is
@@ -1814,6 +1816,10 @@ def mode(args):
     if not read(args.ledger):
         sys.exit("no delivery started: run start first")
     until = until_time(args.until) if args.until else None
+    if args.mode == "autonomous" and not until and not usage_windows(args.ledger)[0]:
+        sys.exit("no account usage is recorded beside the ledger (the mod writes usage.json), so nothing would bound "
+                 "the fix rounds, which have no limit in autonomous mode: ask the user the time they are back and "
+                 "run mode autonomous --until <HH:MM>")
     write(args.ledger, {"type": "mode", "mode": args.mode, **({"until": until} if until else {})})
     print(f"mode {args.mode}" + (f" until {until}" if until else ""))
 
