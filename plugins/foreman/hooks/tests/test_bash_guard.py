@@ -178,6 +178,35 @@ for command in ("cd /c/p/proj && git merge feat/x", "cd C:/p/proj; git commit -m
                 "cd sub && cd /c/p && git commit -m x", "cd sub && git -C /c/p commit -m x"):
     check(f"a delivery: passes {command!r}", run(repo, command)[1] is None, str(run(repo, command)))
 check("with no ledger, a relative cd before a commit passes", run(loose, "cd .. && git commit -m x")[1] is None)
+
+
+def discards(command, folder=None, tool="Bash"):
+    reason = run(folder or repo, command, tool=tool)[1]
+    return reason is not None and reason[0] == "deny" and "not committed" in reason[1]
+
+
+for name in ("dirty.txt", "clean.txt"):
+    with open(os.path.join(repo, name), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("one\n")
+sh("git", "add", "dirty.txt", "clean.txt")
+sh("git", "commit", "-q", "-m", "two files")
+with open(os.path.join(repo, "dirty.txt"), "a", encoding="utf-8", newline="\n") as handle:
+    handle.write("work in progress\n")
+slashed = repo.replace(os.sep, "/")
+for command in ("git checkout -- dirty.txt", "git checkout HEAD -- dirty.txt", "git checkout HEAD dirty.txt",
+                "git checkout .", "git restore dirty.txt", "git restore --worktree dirty.txt", "git restore .",
+                "git restore --source=HEAD dirty.txt", "git restore -s HEAD dirty.txt",
+                "git restore --staged --worktree dirty.txt", f"git -C {slashed} checkout -- dirty.txt",
+                f"cd {slashed} && git restore dirty.txt", "git stash list; git checkout -- clean.txt dirty.txt"):
+    check(f"a delivery: undoing a file with work not committed is denied {command!r}", discards(command),
+          str(run(repo, command)))
+check("a delivery: in PowerShell too", discards("git checkout -- dirty.txt", tool="PowerShell"))
+for command in ("git checkout -- clean.txt", "git restore clean.txt", "git restore --staged dirty.txt",
+                "git checkout --theirs -- dirty.txt", "git checkout -p -- dirty.txt", "git checkout -b other",
+                "git status", 'git commit -m "git checkout -- dirty.txt"'):
+    check(f"a delivery: passes {command!r}", run(repo, command)[1] is None, str(run(repo, command)))
+check("with no ledger, undoing a file with work not committed passes", run(loose, "git checkout -- x.txt")[1] is None)
+sh("git", "checkout", "--", "dirty.txt")
 sh(sys.executable, LEDGER_PY, "mode", "autonomous")
 for command in main_pushes + ("git push", "git merge feat/x", "git merge --no-ff feat/x"):
     check(f"autonomous, on the main branch: denied {command!r}", reaches_main(command))

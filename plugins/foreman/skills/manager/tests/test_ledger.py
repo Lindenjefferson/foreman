@@ -397,32 +397,35 @@ run("start", "--slug", "cap", ledger=CAP)
 run("mode", "autonomous", ledger=CAP)
 add("dev", "DONE", "T1", ledger=CAP)
 add("reviewer", "FAIL", None, 1, ledger=CAP)
-for number in (1, 2):
+for number in range(1, 6):
     add("dev", "DONE", f"fix-{number}", ledger=CAP)
     add("reviewer", "FAIL", None, 1, ledger=CAP)
-check("autonomous: the fix rounds go on up to the third",
-      not any("stop the delivery" in item for item in status(CAP)["pending"]), status(CAP)["pending"])
-add("dev", "DONE", "fix-3", ledger=CAP)
-add("reviewer", "FAIL", None, 1, ledger=CAP)
-check("autonomous: still failing after three fix rounds stops the delivery",
-      any("stop the delivery" in item and "note --validar" in item for item in status(CAP)["pending"]),
-      status(CAP)["pending"])
-add("dev", "DONE", "fix-4", ledger=CAP)
-check("a fix the user asked for past the limit leaves the stop in place until extend",
-      any(step["step"] == "stop" for step in status(CAP)["steps"]), status(CAP)["steps"])
-r = run("extend", "--reason", "the user lets the fixes go on (V5)", ledger=CAP)
 state = status(CAP)
-check("extend records the user's decision to go on past the fix rounds: no stop, the review of the fix is next",
+check("autonomous: the fix rounds go on with no limit, so the delivery never waits for the user's return",
+      not any(step["step"] in ("stop", "ask") for step in state["steps"])
+      and any("one batch" in item for item in state["pending"]), state["pending"])
+check("autonomous: extend is refused, there is no limit to go past",
+      run("extend", "--reason", "x", ledger=CAP).returncode != 0)
+run("mode", "supervised", ledger=CAP)
+check("supervised: the same cycle asks the user", any(step["step"] == "ask" for step in status(CAP)["steps"]),
+      status(CAP)["steps"])
+add("dev", "DONE", "fix-6", ledger=CAP)
+check("a fix the user asked for past the limit leaves the question in place until extend",
+      any(step["step"] == "ask" for step in status(CAP)["steps"]), status(CAP)["steps"])
+r = run("extend", "--reason", "the user lets the fixes go on", ledger=CAP)
+state = status(CAP)
+check("extend records the user's decision to go on past the fix round: no question, the review of the fix is next",
       r.returncode == 0 and not any(step["step"] in ("stop", "ask") for step in state["steps"])
       and state["pending"][0] == "reviewer has not reviewed the latest changes", (r.stderr, state["pending"]))
-check("in autonomous mode extend goes to the VALIDAR list",
-      [item["text"] for item in state["validar"]][-1:] == ["extra fix round: the user lets the fixes go on (V5)"],
-      state["validar"])
 add("reviewer", "FAIL", None, 1, ledger=CAP)
-check("extend gives one more round: still failing after it stops the delivery again, counting every fix round",
-      any(step["step"] == "stop" and step["rounds"] == 4 for step in status(CAP)["steps"]), status(CAP)["steps"])
+check("extend gives one more round: still failing after it asks again, counting every fix round",
+      any(step["step"] == "ask" and step["rounds"] == 6 for step in status(CAP)["steps"]), status(CAP)["steps"])
+run("mode", "autonomous", ledger=CAP)
+check("back to autonomous: the same cycle goes on, the extend no longer limits it",
+      not any(step["step"] in ("stop", "ask") for step in status(CAP)["steps"]), status(CAP)["steps"])
+run("mode", "supervised", ledger=CAP)
 run("extend", "--reason", "one more", ledger=CAP)
-add("dev", "DONE", "fix-5", ledger=CAP)
+add("dev", "DONE", "fix-7", ledger=CAP)
 add("reviewer", "PASS", ledger=CAP)
 add("qa", "PASS", ledger=CAP)
 check("a cycle that passes after an extend closes", status(CAP)["ready_for_gate"] is True, status(CAP)["pending"])
@@ -430,10 +433,12 @@ check("extend within the fix rounds is refused",
       run("extend", "--reason", "x", ledger=CAP).returncode != 0)
 add("dev", "DONE", "T2", ledger=CAP)
 add("reviewer", "FAIL", None, 1, ledger=CAP)
-add("dev", "DONE", "fix-6", ledger=CAP)
+check("an extend of an earlier cycle does not stretch the next one: its first fix round is still due",
+      not any(step["step"] in ("stop", "ask") for step in status(CAP)["steps"]), status(CAP)["pending"])
+add("dev", "DONE", "fix-8", ledger=CAP)
 add("reviewer", "FAIL", None, 1, ledger=CAP)
-check("an extend of an earlier cycle does not shorten the next one",
-      not any(step["step"] == "stop" for step in status(CAP)["steps"]), status(CAP)["pending"])
+check("and the next cycle asks after its own fix round",
+      any(step["step"] == "ask" for step in status(CAP)["steps"]), status(CAP)["steps"])
 
 NEXT = ".superpowers/next.jsonl"
 run("start", "--slug", "next", ledger=NEXT)
@@ -1060,6 +1065,15 @@ add("dev", "DONE", "T4", ledger=FULL)
 state = status(FULL)
 check("full_qa is the latest full qa run across the whole delivery, even from an earlier cycle",
       state["cycle"] > 1 and state["full_qa"]["report"] == SECOND, state["full_qa"])
+check("no commit after the full qa: no warning", status(FULL)["after_full_qa"] is None, status(FULL)["after_full_qa"])
+with open(os.path.join(repo, "docs-after.md"), "w", encoding="utf-8", newline="\n") as handle:
+    handle.write("a doc fixed after the final qa\n")
+subprocess.run(["git", "add", "docs-after.md"], cwd=repo, check=True, capture_output=True)
+subprocess.run(["git", "commit", "-q", "-m", "docs after the full qa"], cwd=repo, check=True, capture_output=True)
+state, text = status(FULL), run("status", ledger=FULL).stdout
+check("a commit after the full qa is named before the gate, which would ask for the full qa again",
+      state["after_full_qa"] == ["docs-after.md"] and "docs-after.md" in text and "defer" in text,
+      (state["after_full_qa"], text))
 
 def stamp(hours):
     return (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=hours)).isoformat(timespec="seconds")
@@ -2098,14 +2112,14 @@ server = socket.socket()
 server.bind(("127.0.0.1", 0))
 server.listen()
 port = server.getsockname()[1]
-up = report_file("port-up.md", lines=["Verdict: PASS", f"Commit: {head()[:7]}", "Interface: n/a",
+up = report_file("port-up.md", lines=["Verdict: PASS.", f"Commit: {head()[:7]}", "Interface: n/a",
                                       f"Processes: none left running; ports: {port}"])
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--report", up, ledger=EARLY)
 check("add --agent qa refuses a report whose ports: line names a port that still accepts connections",
       r.returncode != 0 and str(port) in r.stderr and "PID" in r.stderr and not status(EARLY)["qa"], r.stderr)
 server.close()
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--report", up, ledger=EARLY)
-check("once that server is stopped, the same report is added", r.returncode == 0 and len(status(EARLY)["qa"]) == 1,
+check("once that server is stopped, the same report is added (its Verdict: PASS. ends in a period)", r.returncode == 0 and len(status(EARLY)["qa"]) == 1,
       r.stderr)
 run("add", "--agent", "reviewer", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1", ledger=EARLY)
 before = head()
@@ -2608,6 +2622,11 @@ open(os.path.join(repo, TRACE), "w", encoding="utf-8", newline="\n").write("\n".
 beat = status(TRACE)["heartbeat"]
 check("autonomous, no tick for over 30 minutes: status names the silence and the CronList check",
       beat and beat["minutes"] >= 90 and "CronList" in run("status", ledger=TRACE).stdout, beat)
+run("pause", "--text", "night over: morning summary", ledger=TRACE)
+check("a paused delivery gives no heartbeat warning (the night over deletes the heartbeat)",
+      status(TRACE)["heartbeat"] is None and "CronList" not in run("status", ledger=TRACE).stdout,
+      status(TRACE)["heartbeat"])
+run("resume", ledger=TRACE)
 
 # The gate's verdict goes in the ledger
 r = run("gate", "--verdict", "NOT_READY", "--failed", "Ledger,Docs", ledger=TRACE)

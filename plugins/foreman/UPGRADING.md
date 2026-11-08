@@ -4,6 +4,19 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.2.0 — a noite autônoma não para por rodadas, e menos retrabalho no fim
+
+Do feedback de uma entrega de um projeto do autor.
+
+- **No modo autônomo, as rodadas de correção não têm teto** (melhoria, decisão do dono): antes, três rodadas reprovadas paravam a entrega até a volta do usuário; uma noite parou três horas antes por três falhas de ambiente diferentes, cada uma já corrigida. Agora as rodadas seguem; o uso da conta e o fim da noite (`--until`) continuam pausando. O modo supervisionado não muda: uma rodada, depois a pergunta ao usuário, e o `extend`. As revisões de spec, plano e segurança mantêm o limite: um Critical aberto depois de três rodadas ainda para a entrega. Número: horas de noite perdidas por parada.
+- **O `status` avisa quando há commit depois do `qa --full`** (melhoria): lista os arquivos que mudaram, antes de o gate pedir a suíte inteira de novo, e o passo 6 manda fazer `defer` dos Minors do `qa` final, nunca corrigi-los depois dele. Aconteceu duas vezes numa entrega, cerca de 45 min cada. Número: execuções de `qa --full` por entrega.
+- **O `bash-guard.py` nega `git checkout` e `git restore` que sobrescrevem trabalho não commitado** (melhoria): numa entrega com ledger, quando o `git status` lista como alterado um arquivo que o comando restauraria. Um `dev` perdeu trabalho assim duas vezes numa entrega, contra uma lição que nenhum teste do projeto confere. Troca de branch, `restore --staged`, `--ours`, `--theirs` e `-p` passam.
+- **O molde do `CLAUDE.md` pergunta se a pasta de saída da verificação e a `.superpowers/` ficam fora do watcher do servidor de dev e do linter** (melhoria): um watcher que varria 37 mil arquivos travou o app e custou uma rodada.
+- **O `add` do `qa` aceita pontuação depois do veredicto** (defeito): "Verdict: FAIL." era recusado, e o manager editava o relatório à mão.
+- **Sem aviso de heartbeat com a entrega pausada** (defeito): depois do fim da noite, que apaga o heartbeat, o `status` mandava criá-lo de novo.
+
+**Ao atualizar:** nada muda nos ledgers. O kickoff não mexe num `CLAUDE.md` que já existe: copie para a linha "O que a verificação grava…" de "Execução em paralelo" o trecho novo do molde e preencha como o servidor de dev e o linter deixam de varrer essas pastas.
+
 ## 1.1.0 — `anonimizar` lembrado antes de publicar
 
 Pedido do dono: a limpeza antes da primeira publicação não pode depender de alguém lembrar de pedi-la.
