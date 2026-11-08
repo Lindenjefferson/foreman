@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.1.0 — `anonimizar` lembrado antes de publicar
+
+Pedido do dono: a limpeza antes da primeira publicação não pode depender de alguém lembrar de pedi-la.
+
+- **O molde do `docs/operacao.md` lembra a skill `anonimizar`** (melhoria): a seção "Publicar" ganha uma linha para rodá-la antes de tornar o repositório público pela primeira vez, porque o dado pessoal costuma sobreviver só no histórico do git.
+
+**Ao atualizar:** nada muda nos ledgers. O kickoff não mexe num `docs/operacao.md` que já existe: copie a linha nova do molde para a seção "Publicar" dele.
+
 ## 1.0.0 — primeira versão
 
 Um time de desenvolvimento multiagente para o Claude Code, ligado por projeto:
