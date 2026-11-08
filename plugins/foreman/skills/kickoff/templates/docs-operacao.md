@@ -6,6 +6,8 @@ Como o produto é publicado, guardado e recuperado. Quem executa é uma pessoa: 
 
 _(os comandos, a ordem, o que confere que a publicação deu certo, e o que cada canal (loja, provedor de login, hospedagem) exige antes da primeira publicação, cada exigência com a prova)_
 
+Antes de tornar o repositório público pela primeira vez, rode a skill `anonimizar` do Foreman: dado pessoal costuma sobreviver no histórico do git, não só nos arquivos atuais, e limpar só os arquivos não basta.
+
 ## Backup e restauração
 
 _(o que entra no backup, onde fica, de quanto em quanto tempo; um backup só vale depois de uma restauração provada)_
