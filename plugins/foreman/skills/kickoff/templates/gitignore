@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+
+# superpowers workspace (ledgers, reviews)
+.superpowers/
+
+# claude code (personal, per machine; the shared allowlist lives in .claude/settings.json)
+.claude/settings.local.json
+CLAUDE.local.md
+
+# claude code: worktrees of isolated agents (work areas, not source)
+.claude/worktrees/

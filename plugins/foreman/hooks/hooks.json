@@ -1,0 +1,32 @@
+{
+  "description": "Gives the manager the delivery ledger back after a compaction or a resumed session and keeps the secret-scan hook pointed at the running plugin; denies skipping the secret-scan pre-commit hook, reaching the main branch in autonomous mode and the project's dev server outside background mode; andamento.js draws the delivery's progress.",
+  "modules": [
+    "./andamento.js"
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/bash-guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/python.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
