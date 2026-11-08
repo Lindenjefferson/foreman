@@ -6,7 +6,7 @@ O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `
 
 ## 1.2.0 — a noite autônoma não para por rodadas, e menos retrabalho no fim
 
-Do feedback de uma entrega de um projeto do autor.
+Do feedback de uma entrega de um projeto do autor (PR #2).
 
 - **No modo autônomo, as rodadas de correção não têm teto** (melhoria, decisão do dono): antes, três rodadas reprovadas paravam a entrega até a volta do usuário; uma noite parou três horas antes por três falhas de ambiente diferentes, cada uma já corrigida. Agora as rodadas seguem; o uso da conta e o fim da noite (`--until`) continuam pausando. O modo supervisionado não muda: uma rodada, depois a pergunta ao usuário, e o `extend`. As revisões de spec, plano e segurança mantêm o limite: um Critical aberto depois de três rodadas ainda para a entrega. Para que algo sempre limite a noite, o `mode autonomous` sem `--until` é recusado quando o mod não registra o uso da conta. Número: horas de noite perdidas por parada.
 - **O `status` avisa quando há commit depois do `qa --full`** (melhoria): lista os arquivos que mudaram, antes de o gate pedir a suíte inteira de novo, e o passo 6 manda fazer `defer` dos Minors do `qa` final, nunca corrigi-los depois dele. Aconteceu duas vezes numa entrega, cerca de 45 min cada. Número: execuções de `qa --full` por entrega.
