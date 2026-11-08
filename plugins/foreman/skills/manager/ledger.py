@@ -173,12 +173,13 @@ Pending check and fix-round limits
 
 --check exits 1 while anything is pending, so the gate can rely on it.
 
-A cycle whose reviewer or qa still fails after a fix round asks the user; in autonomous mode the fix rounds go on up
-to three, then the delivery stops. extend, once status asks the user or stops, records the user's decision to go on (a
-note, VALIDAR in autonomous mode): the current cycle gets one more fix round, and a reviewer or qa FAIL after it asks
-or stops again; it never carries to the next cycle. extend --task spec|plan is the same for that review loop, which
-runs one more round (also when status says waive: the user overrules it), and each extension is read only by the loop
-(or the cycle) it was given to.
+A cycle whose reviewer or qa still fails after a fix round asks the user; in autonomous mode the fix rounds go on with
+no limit, so the delivery never waits for the user's return (the plan usage and the night end still pause it). extend,
+once status asks the user (or stops a review loop), records the user's decision to go on (a note, VALIDAR in
+autonomous mode): the current cycle gets one more fix round, and a reviewer or qa FAIL after it asks again; it never
+carries to the next cycle. extend --task spec|plan is the same for that review loop, which runs one more round (also
+when status says waive: the user overrules it), and each extension is read only by the loop (or the cycle) it was
+given to.
 
 Tasks of a later plan cycle
 ---------------------------
@@ -204,7 +205,8 @@ report tested, else the HEAD of the ledger's checkout, which may be another deli
 
 status --tick, the heartbeat's call, also records a tick; in autonomous mode, status --json gives heartbeat: {minutes,
 since} once the latest tick (or the latest mode entry, before the first tick) is over 30 minutes old, else null, and
-the text says to check the heartbeat with CronList. It is advice, never pending.
+the text says to check the heartbeat with CronList; never while the delivery is paused (the night over deletes the
+heartbeat, and a resource pause waits on its background command). It is advice, never pending.
 
 gate records a gate.py run (verdict, failed checks); status --json lists them as gates, for the quality report and the
 analysis of where the time went.
@@ -257,9 +259,10 @@ Status data and plan progress
 
 status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
 worktree, origin, tip, head_moved} per task in flight; paused: {text, at} or null; full_qa: the latest qa run added
-with --full, or null. from: the commit the current cycle's diff starts at, for the reviewer's and qa's range: the base
-for cycle 1, else the head the run that closed the previous cycle recorded (a commit made after it and before this
-cycle's first task, such as an errata, falls in the range too).
+with --full, or null; after_full_qa: the files changed since its head (the quality reports aside), or null, and
+the text says the gate's Full suite will ask for the full qa again. from: the commit the current cycle's diff starts
+at, for the reviewer's and qa's range: the base for cycle 1, else the head the run that closed the previous cycle
+recorded (a commit made after it and before this cycle's first task, such as an errata, falls in the range too).
 
 steps: one {"step": resume|dev|reviewer|qa|fix|review|waive|ask| stop|decide, ...} per pending item, with its detail
 (task and verdict, agent, open findings and the report path, a qa re-run, a review round with its from and report, a
@@ -280,7 +283,9 @@ Autonomous mode until a time
 
 mode autonomous --until records the time the user is back: HH:MM is the next time this machine's clock shows it
 (tomorrow when it is past today), or an ISO time with its offset; a time already past, or --until in supervised mode,
-is refused. While the latest mode entry carries it, status --json gives night: {until, seconds_left, expected, fits,
+is refused. With no valid usage.json beside the ledger, mode autonomous without --until is refused: the fix rounds
+have no limit in autonomous mode, and the night end or the usage pause is what bounds them. While the latest mode
+entry carries it, status --json gives night: {until, seconds_left, expected, fits,
 over, done_since}, else null. expected is each run's expected seconds from this delivery's measured runs, null before
 the first: dev is scope's median_task_seconds, reviewer and qa the median of their cycle runs (qa without --full), and
 qa_full the latest qa --full; fits says whether it ends before until (null when unknown). over is true once until is
@@ -389,7 +394,6 @@ VERDICTS = {
 }
 ORIGINS = ("design", "assumption", "plan", "execution", "environment")
 SEVERITIES = ("critical", "important", "minor")
-FIX_ROUNDS = {False: 1, True: 3}
 REVIEW_ROUNDS = 3
 REVIEWS = ("spec", "plan", "security")
 PARTIAL_REPORT_MINUTES = 90
@@ -699,19 +703,14 @@ def cycle_state(cycle, autonomous=False, extended=None, interface=False):
         need("cycle 1 closes only once a qa ran the interface (Verificação de interface) on at least one path: open, "
              "sign in, a screen with data; add it with --interface. A machine that cannot run it is a block, never a "
              "VALIDAR: make it ready (Preparar uma máquina) first", "qa", interface=True)
-    rounds = FIX_ROUNDS[autonomous] if extended is None else 0
-    for agent, done in (("reviewer", reviews), ("qa", checks)):
+    rounds = 1 if extended is None else 0
+    for agent, done in (("reviewer", reviews), ("qa", checks)) if not autonomous else ():
         failed = sum(1 for index, entry in enumerate(cycle) if index >= (extended or 0) and entry["agent"] == agent
                      and entry["verdict"] == "FAIL")
         if done and done[-1]["verdict"] == "FAIL" and failed > rounds:
             if extended is not None:
-                need(f"{agent} still fails after the extra fix round: "
-                     + ("stop the delivery and record the open findings as note --validar" if autonomous
-                        else "ask the user"), "stop" if autonomous else "ask", agent=agent, extended=True,
-                     rounds=sum(1 for entry in done if entry["verdict"] == "FAIL") - 1)
-            elif autonomous:
-                need(f"{agent} still fails after {rounds} fix rounds: stop the delivery and record the open "
-                     "findings as note --validar", "stop", agent=agent, rounds=rounds)
+                need(f"{agent} still fails after the extra fix round: ask the user", "ask", agent=agent,
+                     extended=True, rounds=sum(1 for entry in done if entry["verdict"] == "FAIL") - 1)
             else:
                 need(f"{agent} still fails after a fix round: ask the user", "ask", agent=agent)
     return state, pending
@@ -1176,7 +1175,7 @@ HEARTBEAT_MINUTES = 30
 def heartbeat(entries, auto):
     """In autonomous mode, how long since the latest tick (or mode entry): {minutes, since} past 30, else None."""
     marks = [entry["at"] for entry in entries if entry["type"] in ("tick", "mode") and entry.get("at")]
-    if not auto or not marks:
+    if not auto or not marks or paused(entries):
         return None
     try:
         since = datetime.datetime.fromisoformat(marks[-1])
@@ -1278,7 +1277,7 @@ def qa_report(args, entries):
     if missing:
         sys.exit(f"{args.report} lacks {', '.join(missing)} of qa.md's report: save the report as qa wrote it, or send "
                  "qa back for the lines it left out")
-    said = found["Verdict"].split()[0].strip("*_`") if found["Verdict"] else ""
+    said = found["Verdict"].split()[0].strip("*_`.,;:!") if found["Verdict"] else ""
     if said.upper() != args.verdict:
         sys.exit(f"{args.report} says Verdict: {said or '(nothing)'}, not {args.verdict}")
     ports = re.search(r"(?i)\bports:\s*(none\b|\d[\d,\s]*)", found["Processes"])
@@ -1324,6 +1323,18 @@ def place(entry, separator):
 def tip(entry):
     tree = entry.get("worktree")
     return git_head(tree=tree) if tree and os.path.isdir(tree) else None
+
+
+def after_full(full, ledger):
+    """The files changed since the latest qa --full's head (the quality reports aside), or None with none: the gate's
+    Full suite check asks for the full qa again over them."""
+    if not full or not full.get("head"):
+        return None
+    result = subprocess.run(["git", "diff", "--name-only", full["head"], "HEAD"], capture_output=True, text=True,
+                            cwd=os.path.dirname(os.path.abspath(ledger)))
+    changed = [name for name in result.stdout.splitlines()
+               if name and not name.startswith("docs/quality-reports/")] if result.returncode == 0 else []
+    return changed or None
 
 
 def moved(entry, head):
@@ -1805,6 +1816,10 @@ def mode(args):
     if not read(args.ledger):
         sys.exit("no delivery started: run start first")
     until = until_time(args.until) if args.until else None
+    if args.mode == "autonomous" and not until and not usage_windows(args.ledger)[0]:
+        sys.exit("no account usage is recorded beside the ledger (the mod writes usage.json), so nothing would bound "
+                 "the fix rounds, which have no limit in autonomous mode: ask the user the time they are back and "
+                 "run mode autonomous --until <HH:MM>")
     write(args.ledger, {"type": "mode", "mode": args.mode, **({"until": until} if until else {})})
     print(f"mode {args.mode}" + (f" until {until}" if until else ""))
 
@@ -2165,6 +2180,7 @@ def status(args):
         plan_field(text, task, "Touches")) if text else [])
     report["approval"] = standing(args.ledger)
     report["heartbeat"] = heartbeat(entries, auto)
+    report["after_full_qa"] = after_full(report["full_qa"], args.ledger)
     report["gates"] = [{"verdict": entry["verdict"], "failed": entry.get("failed", []), "at": entry.get("at")}
                        for entry in entries if entry["type"] == "gate"]
     if args.json:
@@ -2204,6 +2220,10 @@ def status(args):
         if report["heartbeat"]:
             print(f"heartbeat: no tick for {report['heartbeat']['minutes']} min in autonomous mode (since "
                   f"{report['heartbeat']['since']}): check the heartbeat job with CronList and create it if it is gone")
+        if report["after_full_qa"]:
+            print(f"after the full qa at {report['full_qa']['head'][:7]}: {', '.join(report['after_full_qa'])} "
+                  "changed, so the gate's Full suite asks for the full qa again: defer a Minor of the final qa "
+                  "instead of fixing it after it")
         unfilled = report["settings"]["unfilled"]
         if unfilled:
             print("settings: unfilled, " + "; ".join(

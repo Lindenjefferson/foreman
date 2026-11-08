@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse hook (matcher Bash|PowerShell, see hooks.json): denies skipping the secret-scan pre-commit hook,
 anything that reaches the default branch while the delivery is in autonomous mode, a relative cd before a git step
-that lands work, and the project's dev server outside background mode; asks the user before a delivery starts
+that lands work, a git checkout or restore that overwrites work not committed, and the project's dev server outside background mode; asks the user before a delivery starts
 outside Claude Code's auto permission mode (not the delivery's autonomous mode).
 
 With a ledger (any mode), denied in the foreground or background: a relative change of directory (cd, pushd,
@@ -11,6 +11,12 @@ their worktree included. Not read: a cd inside ( ) or $( ), which stays in its s
 and a git step after a later rooted cd or with git -C and a rooted path. From a copy's worktree a
 relative path lands somewhere else, and a failed cd lets the steps after it run in the wrong folder or not at all
 without anyone noticing (an integration skipped twice in one delivery); git -C with an absolute path names the folder.
+
+With a ledger (any mode), also denied in the foreground or background: a git checkout or git restore whose paths
+(after --, or the words that are no commit) git status lists as changed, in the folder of its git -C or of the
+latest rooted cd before it: the work in those files is lost with no way back (a dev undid uncommitted work this way
+twice in one delivery, against a lesson no project test can check). Passing: a branch change, restore --staged
+alone, --ours, --theirs, -p, a file with no change.
 
 A ledger.py start (also start --next), run in a session whose permission_mode is neither auto nor
 bypassPermissions, asks the user first, naming the mode: the delivery would stop at each permission prompt while the
@@ -634,6 +640,57 @@ def relative_cd_before_git(command, powershell=False):
     return False
 
 
+KEEPS_WORK = {"--ours", "--theirs", "-p", "--patch", "-m", "--merge", "--conflict"}
+RESTORE_VALUE = {"-s", "--source", "--pathspec-from-file"}
+
+
+def folder_of(target, cwd):
+    """A cd target or git -C path as a folder the git subprocess can enter (/c/x is C:/x on Windows)."""
+    target = os.path.expanduser(target)
+    if os.name == "nt" and re.match(r"/[A-Za-z](/|$)", target):
+        target = target[1] + ":" + (target[2:] or "/")
+    return os.path.join(cwd, target)
+
+
+def discards_work(command, cwd, powershell=False):
+    """True when a git checkout or git restore overwrites a file whose work is not committed: the paths it names
+    (after --, or the words that are no commit) that git status lists as changed in that folder. A branch change, a
+    restore of the index alone (--staged), a conflict side (--ours, --theirs) and the interactive -p pass."""
+    where = cwd
+    for program, arguments, _ in simple_commands(command, powershell):
+        if program.lower() in CHANGES_DIRECTORY:
+            target = next((word for word in arguments if not word.startswith("-")), None)
+            if target and ROOTED.match(target):
+                where = folder_of(target, cwd)
+            continue
+        if program != "git":
+            continue
+        name, rest, _ = git_command(arguments)
+        named = next((after for word, after in zip(arguments, arguments[1:]) if word == "-C"), None)
+        folder = folder_of(named, where) if named else where
+        if name not in ("checkout", "restore") or KEEPS_WORK & set(rest) or not os.path.isdir(folder):
+            continue
+        if name == "restore" and ({"--staged", "-S"} & set(rest)) and not ({"--worktree", "-W"} & set(rest)):
+            continue
+        if name == "checkout" and "--" not in rest and switched_to(name, rest, folder):
+            continue
+        paths, value_next = [], False
+        for position, word in enumerate(rest):
+            if word == "--":
+                paths = rest[position + 1:]
+                break
+            if value_next:
+                value_next = False
+            elif word in RESTORE_VALUE or (name == "checkout" and word in ("-b", "-B", "--orphan")):
+                value_next = True
+            elif not word.startswith("-") and not (name == "checkout" and not paths and git_out(
+                    folder, "rev-parse", "--verify", "--quiet", word + "^{commit}")):
+                paths.append(word)
+        if paths and git_out(folder, "status", "--porcelain", "--untracked-files=no", "--", *paths):
+            return True
+    return False
+
+
 def main():
     payload = json.load(sys.stdin)
     if payload.get("tool_name") not in ("Bash", "PowerShell"):
@@ -670,6 +727,10 @@ def main():
                   "delete runs that step from wherever the cd lands, or not at all when it fails, and the steps "
                   "after it go on silently. Name the folder instead, with git -C <absolute path>, one step per "
                   "command (as references/parallel.md integrates).")
+    elif discards_work(command, cwd, powershell) and (ledger_state(cwd) or (0, 0, []))[2]:
+        reason = ("This git checkout or git restore overwrites a file whose work is not committed, and that work is "
+                  "lost for good. Undo only the lines you mean to with an edit, or commit (a wip: commit) or stash "
+                  "first; git status lists what would go.")
     elif tool_input.get("run_in_background"):
         return
     else:
