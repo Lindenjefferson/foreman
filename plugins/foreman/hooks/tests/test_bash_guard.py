@@ -73,6 +73,19 @@ check("without the line the hook does nothing", run(nolines, "npm run dev") == (
 bare = tempfile.mkdtemp(prefix="devserver_")
 check("without a CLAUDE.md the hook does nothing", run(bare, "npm run dev") == (0, None, ""))
 
+# a project command run inside timeout is killed at the limit, the suite half run (a qa lost its interface run so)
+suites = project("- Testes: `npm test`\n- Verificação de interface: `npm run e2e:android`\n")
+denied = run(suites, "timeout 590 npm run e2e:android")[1]
+check("a Comandos line inside timeout is denied, naming background mode and a log of its own",
+      denied and denied[0] == "deny" and "run_in_background" in denied[1] and "log" in denied[1], str(denied))
+check("timeout with its options, after cd and in background is still denied",
+      run(suites, "cd app && timeout -k 5 --signal=KILL 10m npm test -- --runInBand", background=True)[1] is not None)
+check("timeout around another command passes", run(suites, "timeout 5 curl -s localhost:3000")[1] is None)
+check("the Comandos line alone passes", run(suites, "npm run e2e:android > e2e.log 2>&1", background=True)[1] is None)
+check("timeout and the command only quoted in a message pass",
+      run(suites, 'git commit -m "qa: no timeout npm test"')[1] is None)
+check("without a CLAUDE.md, timeout passes", run(bare, "timeout 590 npm test")[1] is None)
+
 garbage = subprocess.run([sys.executable, SCRIPT], input="not json", capture_output=True, text=True)
 check("garbage on stdin never blocks", garbage.returncode == 0 and garbage.stdout == "", garbage.stderr)
 

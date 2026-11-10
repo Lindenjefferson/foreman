@@ -5,7 +5,7 @@ Commands
 --------
 
   start   --slug <slug> [--base <rev>] [--plan <path>] [--archive]       once per delivery
-  start   --slug <slug> --next [--base <rev>]                 the next delivery's spec and plan, while this one codes
+  start   --slug <slug> --next [--base <rev>] [--worktree <path>]   the next delivery's spec and plan, while this one codes
   add     --agent dev --task <id> --verdict <v> [--from-agent <agent id>] [--seconds <duration>] [--tokens N]
   add     --agent reviewer|qa --verdict PASS|FAIL [--critical N --important N --minor N --origin <origin>=N,...]
           [--report <path> | --from-agent <agent id>] [--head <rev>] [--seconds <duration>] [--tokens N]
@@ -145,7 +145,9 @@ semicolon-separated item) must differ from every file the current delivery chang
 Touches: item of its tasks not done (its scope, and its claims in flight), a folder ending in / colliding with what is
 inside it; a task with no Touches: line is refused, and so is each collision, naming it. The run stays in the
 preparation and goes with it into the promotion; its own status is never ready for the gate and leaves leftovers and
-disk to the current one. The current delivery's status lists each one as advice, never pending (next: {slug, ledger,
+disk to the current one. Its worktree, named by start --next --worktree <path> (or by that same command once it is
+open, when it named none), and the worktrees of its claims are no leftover of the current delivery, nor their
+branches, even clean with no commit past the head. The current delivery's status lists each one as advice, never pending (next: {slug, ledger,
 pending, validar, claims}: the pending of its review loops, its claims in flight and its open VALIDAR items, validated
 with --ledger on its file).
 
@@ -821,11 +823,22 @@ def start(args):
     where = os.path.dirname(os.path.abspath(args.ledger))
     named = {"base_ref": args.base} if git_ok(where if os.path.isdir(where) else None, "show-ref", "--verify",
                                               "--quiet", "refs/heads/" + args.base) is not None else {}
+    tree = {"worktree": os.path.abspath(args.worktree)} if args.next and args.worktree else {}
     if args.next:
         target = next_path(args.ledger, args.slug)
         if os.path.exists(target):
-            sys.exit(f"{args.slug} is already in preparation in {target}")
-        write(target, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan, "next": True})
+            with open(target, encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
+            opening = json.loads(lines[0])
+            if not tree or opening.get("worktree"):
+                sys.exit(f"{args.slug} is already in preparation in {target}"
+                         + (f", in the worktree {opening['worktree']}" if opening.get("worktree") else ""))
+            with open(target, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write("\n".join([json.dumps({**opening, **tree}, ensure_ascii=False)] + lines[1:]) + "\n")
+            print(f"{args.slug} prepares in the worktree {tree['worktree']}: no leftover of this delivery")
+            return
+        write(target, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan, "next": True,
+                       **tree})
         print(f"preparing {args.slug} in {target}: pass --ledger {target} to its spec and plan rounds (add, measure, "
               f"note, defer); its code starts once this delivery reaches the gate, with start --slug {args.slug} "
               "--archive")
@@ -842,7 +855,7 @@ def start(args):
     if os.path.exists(prepared):
         with open(prepared, encoding="utf-8") as handle:
             lines = [line for line in handle.read().splitlines() if line.strip()]
-        opening = {key: value for key, value in json.loads(lines[0]).items() if key != "next"}
+        opening = {key: value for key, value in json.loads(lines[0]).items() if key not in ("next", "worktree")}
         opening.pop("base_ref", None)
         opening.update(base=base, **named, plan=args.plan or opening.get("plan"),
                        promoted=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"))
@@ -1371,6 +1384,9 @@ def leftovers(entries, ledger, head, testing=False):
     copies = os.path.normpath(os.path.join(os.path.dirname(root), "_temp", os.path.basename(root) + "-worktrees"))
     homes = (norm(copies) + os.sep, norm(os.path.join(root, ".claude", "worktrees")) + os.sep)
     held = {norm(entry["worktree"]) for entry in claims(entries).values() if entry.get("worktree")}
+    for _, prepared in queued(ledger):  # a preparation's own worktree and its claims' are its work, even clean
+        held |= {norm(item["worktree"]) for item in prepared[:1] + list(claims(prepared).values())
+                 if item.get("worktree")}
     integrated = lambda rev: git_ok(root, "merge-base", "--is-ancestor", rev, head) is not None
     found, trees, busy = [], set(), set()
     for block in (git_ok(root, "worktree", "list", "--porcelain") or "").split("\n\n"):
@@ -2539,6 +2555,7 @@ def main():
     command.add_argument("--plan", help="the approved plan, whose acceptance-criterion ids the gate traces to tests")
     command.add_argument("--archive", action="store_true", help="move an existing delivery aside first")
     command.add_argument("--next", action="store_true", help="prepare the next delivery's spec and plan beside this one")
+    command.add_argument("--worktree", help="with --next: the worktree the preparation is written in, no leftover of this delivery")
     command.set_defaults(run=start)
     command = commands.add_parser("add")
     command.add_argument("--agent", required=True, choices=sorted(VERDICTS))
