@@ -6,7 +6,7 @@ O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `
 
 ## 1.3.0 — a preparação da próxima entrega não vira sobra, e nenhuma suíte morre por `timeout`
 
-Do feedback da entrega app-f1a de um projeto do autor.
+Do feedback da entrega app-f1a de um projeto do autor (PR #3).
 
 - **A worktree da preparação `--next` não aparece como sobra** (defeito): uma worktree recém-criada para a spec e o plano da próxima entrega, ainda sem nada escrito, aparecia no `status` da entrega atual como sobra, com a ordem de removê-la e de apagar a branch. Agora `start --slug <próxima> --next --worktree <caminho>` registra a worktree, também numa preparação já aberta. Essa worktree, as das tarefas que a preparação reservou e as branches delas deixam de ser sobra. Número: pendências de sobra apontadas em trabalho vivo, por entrega.
 - **O `bash-guard.py` nega um comando de "Comandos" dentro de `timeout`** (melhoria): um `qa` rodou a suíte de interface dentro de `timeout 590`, e a execução morreu depois do primeiro fluxo. A negação manda rodar em background, com log próprio. Número: execuções de `qa` perdidas por ambiente, por entrega.
