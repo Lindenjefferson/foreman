@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse hook (matcher Bash|PowerShell, see hooks.json): denies skipping the secret-scan pre-commit hook,
 anything that reaches the default branch while the delivery is in autonomous mode, a relative cd before a git step
-that lands work, a git checkout or restore that overwrites work not committed, and the project's dev server outside background mode; asks the user before a delivery starts
+that lands work, a git checkout or restore that overwrites work not committed, a project command inside timeout, and the project's dev server outside background mode; asks the user before a delivery starts
 outside Claude Code's auto permission mode (not the delivery's autonomous mode).
 
 With a ledger (any mode), denied in the foreground or background: a relative change of directory (cd, pushd,
@@ -72,7 +72,12 @@ Denied: a call without run_in_background whose command contains the dev command 
 segment (after &&, ||, ;, |, a newline, an opening parenthesis or env assignments), alone or followed by arguments;
 `npm run dev &` counts too, because the shell leaves the same orphan. Text the shell only passes along is not
 read: quoted strings (a commit message) and heredoc bodies (a file being written), unless a shell reads the
-heredoc (`bash <<EOF`). The reason names the right form. Any failure of the hook itself lets the call through."""
+heredoc (`bash <<EOF`). The reason names the right form.
+
+Denied in a Bash call, in the foreground or background: any command of a "Comandos" line run as timeout's command
+(timeout and its options and duration at the start of a shell segment, read as the dev server is): timeout kills it
+at the limit, the suite half run (a qa lost an interface run so). The reason names background mode with a log of its
+own. Any failure of the hook itself lets the call through."""
 import base64
 import importlib.util
 import json
@@ -88,7 +93,8 @@ LEDGER = os.path.join(HERE, "..", "skills", "manager", "ledger.py")
 LABEL = "rodar em desenvolvimento"
 
 
-def dev_command(start):
+def project_commands(start):
+    """The commands of the "Comandos" lines of the CLAUDE.md found from start upwards: [(label key, command)]."""
     spec = importlib.util.spec_from_file_location("foreman_gate", GATE)
     gate = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gate)
@@ -96,13 +102,15 @@ def dev_command(start):
     while True:
         if os.path.isfile(os.path.join(folder, "CLAUDE.md")):
             os.chdir(folder)
-            for label, command in gate.comandos():
-                if gate.label_key(label) == LABEL:
-                    return command
+            return [(gate.label_key(label), command) for label, command in gate.comandos() if command]
         parent = os.path.dirname(folder)
         if parent == folder:
-            return None
+            return []
         folder = parent
+
+
+def dev_command(commands):
+    return next((command for key, command in commands if key == LABEL), None)
 
 
 HEREDOC = re.compile(r"^(?P<head>[^\n]*?)(?<!<)<<(?!<)-?\s*\\?(['\"]?)(?P<tag>[\w.-]+)\2[^\n]*\n(?P<body>.*?)"
@@ -125,7 +133,10 @@ def program_name(word):
     return re.sub(r"\.(exe|cmd|bat|ps1)$", "", re.split(r"[\\/]", word)[-1].lower())
 
 
-def runs_it(command, dev, powershell=False):
+TIMEOUT = r"timeout(?:\s+(?:-[ks]\s+\S+|-\S+))*\s+\d[\d.]*[smhd]?\s+"
+
+
+def runs_it(command, dev, powershell=False, prefix=""):
     """True when the command runs the dev command: in PowerShell, as a simple command of its own, since its
     quoting is resolved word by word; in Bash, at the start of a shell segment of the text the shell executes."""
     words = dev.split()
@@ -133,7 +144,7 @@ def runs_it(command, dev, powershell=False):
         return any(program == program_name(words[0]) and list(arguments[:len(words) - 1]) == words[1:]
                    for program, arguments, _ in simple_commands(command, powershell=True))
     pattern = r"\s+".join(re.escape(word) for word in words)
-    return re.search(r"(?:^|&&|\|\||[;|\n(])\s*(?:[A-Za-z_]\w*=\S*\s+)*" + pattern + r"(?=\s|$|[;&|)])",
+    return re.search(r"(?:^|&&|\|\||[;|\n(])\s*(?:[A-Za-z_]\w*=\S*\s+)*" + prefix + pattern + r"(?=\s|$|[;&|)])",
                      executed(command)) is not None
 
 
@@ -700,6 +711,8 @@ def main():
     command = tool_input.get("command") or ""
     cwd = payload.get("cwd") or os.getcwd()
     mode = payload.get("permission_mode")
+    found = {}
+    commands = lambda folder: found.setdefault(folder, project_commands(folder))
     if mode and mode not in UNATTENDED and starts_delivery(command, powershell):
         json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                                           "permissionDecisionReason": (
@@ -731,10 +744,14 @@ def main():
         reason = ("This git checkout or git restore overwrites a file whose work is not committed, and that work is "
                   "lost for good. Undo only the lines you mean to with an edit, or commit (a wip: commit) or stash "
                   "first; git status lists what would go.")
+    elif not powershell and any(runs_it(command, line, prefix=TIMEOUT) for _, line in commands(cwd)):
+        reason = ("timeout kills this project command at its limit, the suite half run and the run lost. Run it with "
+                  "the tool's run_in_background set to true, its output in a log of its own, and read the log when "
+                  "it finishes.")
     elif tool_input.get("run_in_background"):
         return
     else:
-        dev = dev_command(cwd)
+        dev = dev_command(commands(cwd))
         if not dev or not runs_it(command, dev, powershell):
             return
         reason = (f"`{dev}` is this project's dev server and never returns, so in the foreground it hangs the call and "

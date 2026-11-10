@@ -10,8 +10,7 @@ Nenhuma no momento.
 
 ## Backlog
 
-- **Defeito: `status` aponta como sobra a worktree e a branch da preparação `--next` ainda limpas** (um projeto do autor): depois de `start --slug <próxima> --next` e de `git worktree add` da preparação, com o agente da spec despachado e nada escrito ainda, o `status` mandou remover a worktree e dar `git branch -d` na branch. O `leftovers()` do `ledger.py` só reconhece a preparação pelo trabalho não commitado (docstring: "the next delivery's spec and plan before its start"), e uma cópia recém-criada a partir da cabeça da entrega não tem nada a commitar. Correção, com teste primeiro: a worktree e a branch de uma preparação `--next` aberta não são sobra, com ou sem mudança. Esforço: P.
-- **Melhoria: o `qa` matou a própria suíte de interface com `timeout`** (um projeto do autor): o `qa` rodou o comando de "Verificação de interface" dentro de `timeout 590` e a execução morreu depois do primeiro fluxo; o relatório admite o erro, e a execução foi perdida. O `agents-shared.md` manda rodar servidor em background, mas não fala de comando de teste mais longo que o limite da ferramenta. Primeiro como checagem: o `bash-guard.py` recusa `timeout` em volta de uma linha de "Comandos" e manda rodar em background, com log próprio; senão, uma linha no `agents-shared.md`. Número: execuções de `qa` perdidas por ambiente, por entrega. Esforço: P.
+Nenhum no momento.
 
 ## Em espera (voltam com um sinal)
 

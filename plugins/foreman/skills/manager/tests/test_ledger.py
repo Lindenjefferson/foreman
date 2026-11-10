@@ -2533,6 +2533,23 @@ check("the preparation leaves the copies and the disk to the current delivery: n
 subprocess.run(["git", "worktree", "remove", "--force", QUEUE_TREE],
                cwd=repo, capture_output=True)
 subprocess.run(["git", "branch", "-D", "wt/queue-T9"], cwd=repo, capture_output=True)
+# the preparation's own worktree, made from the delivery head with nothing written yet, is no leftover of the
+# current delivery once start --next names it (also given after the preparation opened)
+PREP_TREE = os.path.join(repo, "..", "_temp", os.path.basename(repo) + "-worktrees", "seguinte-prep")
+subprocess.run(["git", "worktree", "add", "-q", "-b", "docs/seguinte-prep", PREP_TREE], cwd=repo, capture_output=True)
+prep_left = lambda: [item for item in status(QUEUE)["leftovers"]
+                     if item.get("branch") == "docs/seguinte-prep" or os.path.normcase(os.path.realpath(
+                         item.get("path") or "")) == os.path.normcase(os.path.realpath(PREP_TREE))]
+check("a clean worktree no preparation names is a leftover", [item["kind"] for item in prep_left()] == ["worktree"],
+      prep_left())
+r = run("start", "--slug", "seguinte", "--next", "--worktree", PREP_TREE, ledger=QUEUE)
+check("start --next --worktree on an open preparation records its worktree", r.returncode == 0, r.stderr)
+check("the worktree a preparation names, clean and with no commit past the head, and its branch are no leftover",
+      prep_left() == [], prep_left())
+check("start --next --worktree is refused once the preparation has a worktree",
+      run("start", "--slug", "seguinte", "--next", "--worktree", PREP_TREE, ledger=QUEUE).returncode != 0)
+subprocess.run(["git", "worktree", "remove", "--force", PREP_TREE], cwd=repo, capture_output=True)
+subprocess.run(["git", "branch", "-D", "docs/seguinte-prep"], cwd=repo, capture_output=True)
 shutil.rmtree(os.path.join(repo, "..", "_temp", os.path.basename(repo) + "-worktrees"), ignore_errors=True)
 add("reviewer", "PASS", "plan", ledger=NEXT, seconds=60)
 run("defer", "--text", "item da preparação", "--recommend", "deixar", ledger=NEXT)
