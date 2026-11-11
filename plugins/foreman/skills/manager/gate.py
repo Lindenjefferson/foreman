@@ -8,7 +8,8 @@ A criterion is an id that opens a list item of the plan (- AC-T3-2, * **AC-T3-2*
 anywhere else is cited, a warning ("cited, never defined") and never traced, and a plan where no id opens a list
 item is read as before, every id a criterion (one opening an item of the plan's ## Errata too, as a fix round's
 criteria). A task's criteria, for --criteria, are those with a segment that is the
-task id or ends with it right after a digit (AC-T3-2, AC-PL-T3-2 and AC-074T3-2 are T3's; AC-T31-2 is not).
+task id or ends with it right after a digit (AC-T3-2, AC-PL-T3-2 and AC-074T3-2 are T3's; AC-T31-2 is not), and,
+for a task id with a hyphen, those holding the segments it splits into, with one more after them (AC-F1B-3-1).
 
 Checks, in order: nothing is pending in the ledger (the current cycle is closed, every deferred item has a final
 decision, a delivery marked sensitive had its security scan and no copy of an integrated task is left over); the tree is clean; the documentation the kickoff prepared stays whole (with a docs/README.md: docs/arquitetura.md, the patterns every task follows, exists and, once a module doc docs/modulos/NN-*.md is tracked, holds no _(...)_ placeholder; the index names every tracked module doc; every entry of docs/ is in the map (README.md, arquitetura.md, operacao.md
@@ -423,10 +424,13 @@ def born_with_code(base, plan, ids, patterns, tests, folders):
 
 def of_task(item, task):
     """A segment of the id is the task id, or ends with it right after a digit (AC-T3-2, AC-PL-T3-2, AC-074T3-2), in
-    any case and with the task's hyphens left out (fix-2 is FIX2 in AC-DC-FIX2-1)."""
-    task = task.replace("-", "").lower()
-    return any(part == task or (part.endswith(task) and part[:-len(task)][-1:].isdigit())
-               for part in (part.lower() for part in re.split(r"[.-]", item)[1:]))
+    any case and with the task's hyphens left out (fix-2 is FIX2 in AC-DC-FIX2-1), or, for a task id with a hyphen,
+    the run of segments it splits into, with a segment after it (AC-F1B-3-1 and AC-PL-F1B-3-2 are F1B-3's)."""
+    parts = [part.lower() for part in re.split(r"[.-]", item)[1:]]
+    run = task.lower().split("-")
+    joined = "".join(run)
+    return any(part == joined or (part.endswith(joined) and part[:-len(joined)][-1:].isdigit()) for part in parts) or (
+        len(run) > 1 and any(parts[at:at + len(run)] == run for at in range(len(parts) - len(run))))
 
 
 def environment():
