@@ -10,8 +10,7 @@ Nenhuma no momento.
 
 ## Backlog
 
-- **Itens adiados idênticos repetidos de entrega em entrega** (melhoria; um projeto do autor): quatro itens chegam em três cópias iguais a cada `start` (D1=D9=D15, D2=D10=D16, D3=D11=D20, D6=D13=D22), em quatro entregas seguidas, porque o `carried()` do `ledger.py` acrescenta cada linha "moved to" sem tirar as repetidas; cada cópia pede uma decisão antes do gate. O `start` junta os itens com o mesmo texto, sem o "(moved here by ...)", com teste primeiro. Número: itens adiados repetidos por entrega (meta 0). Esforço: P.
-- **Ação aprovada que o modo auto bloqueia** (melhoria; decisão do dono): o prompt do heartbeat agendado nunca nomeia a ação aprovada (só `status`); uma ação aprovada e bloqueada não é repetida nem reformulada: vira `note --validar`, aviso com o comando exato, e o trabalho segue; o `status` a lista como pendência do dono. Teste primeiro no `ledger.py`. Número: ações bloqueadas repetidas por entrega (meta 0). Esforço: M.
+Nenhum no momento.
 
 ## Em espera (voltam com um sinal)
 

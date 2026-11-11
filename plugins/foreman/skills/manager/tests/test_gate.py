@@ -333,6 +333,7 @@ ledger_cmd("mode", "autonomous", "--until", (datetime.datetime.now(datetime.time
 ledger_cmd("note", "--text", "page size 50", "--validar", "--recommend", "confirm")
 ledger_cmd("note", "--text", "sort by date", "--validar", "--recommend", "confirm")
 ledger_cmd("validate", "--id", "V2", "--decision", "user: confirmed")
+ledger_cmd("note", "--text", "publish the release", "--blocked", "npm run deploy")
 r = gate("--base", "main", "--report", "feature-y")
 check("all criteria traced, audit passes, deferred decided: READY",
       r.returncode == 0 and "Auditoria:  PASS" in r.stdout and "Criteria:   PASS" in r.stdout, r.stdout)
@@ -346,7 +347,8 @@ check("the report shows findings by origin and the deferred decisions",
       and "- D1 wrap long names -> user: next delivery" in text, text)
 check("the report shows the mode and the VALIDAR list, each item with the user's decision or pending",
       "Mode: autonomous" in text and "## VALIDAR" in text and "- V1 page size 50 -> pending" in text
-      and "- V2 sort by date -> user: confirmed" in text, text)
+      and "- V2 sort by date -> user: confirmed" in text
+      and "- V3 publish the release (blocked: npm run deploy) -> pending" in text, text)
 check("the report shows the tokens per agent and task, and how many runs have none",
       re.search(r"- Tokens: dev 90000, reviewer 30000 \(\d+ runs? unmeasured\)", text) is not None
       and "- Task tokens: T1 90000" in text, text)

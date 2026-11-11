@@ -4,6 +4,15 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.4.0 — itens adiados sem cópias, e a ação aprovada que o modo auto bloqueia espera o dono
+
+Das entregas de um projeto do autor (PR #5).
+
+- **Cópias de um item adiado entram uma vez** (melhoria): quatro itens chegavam em três cópias iguais a cada `start` (D1=D9=D15, D2=D10=D16, D3=D11=D20, D6=D13=D22), em cinco entregas seguidas, e cada cópia pedia uma decisão antes do gate. Agora o `start` junta os itens movidos com o mesmo texto, sem o "(moved here by ...)", e fica com o primeiro. Número: itens adiados repetidos por entrega (meta 0).
+- **Ação aprovada que o modo de permissão recusa** (melhoria, decisão do dono): merge, push, deploy ou atualização do plugin aprovados e recusados pelo modo auto não são repetidos nem reformulados. O manager grava `note --text <para quê> --blocked <comando exato>`, um item VALIDAR com o comando e a recomendação "the user runs it", manda o aviso com o comando e segue no que não depende dele. O `ledger.py` recusa o mesmo comando de novo enquanto o item espera, e o relatório de qualidade mostra o comando junto do item. O heartbeat continua pedindo só o `status`, sem nomear a ação. Número: ações bloqueadas repetidas por entrega (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.3.1 — `--criteria` acha os critérios de uma tarefa com hífen no id
 
 Da entrega app-f1b de um projeto do autor (PR #4).
