@@ -10,12 +10,14 @@ Nenhuma no momento.
 
 ## Backlog
 
-Nenhum no momento.
+- **Itens adiados idênticos repetidos de entrega em entrega** (melhoria; um projeto do autor): quatro itens chegam em três cópias iguais a cada `start` (D1=D9=D15, D2=D10=D16, D3=D11=D20, D6=D13=D22), em quatro entregas seguidas, porque o `carried()` do `ledger.py` acrescenta cada linha "moved to" sem tirar as repetidas; cada cópia pede uma decisão antes do gate. O `start` junta os itens com o mesmo texto, sem o "(moved here by ...)", com teste primeiro. Número: itens adiados repetidos por entrega (meta 0). Esforço: P.
+- **Ação aprovada que o modo auto bloqueia** (melhoria; decisão do dono): o prompt do heartbeat agendado nunca nomeia a ação aprovada (só `status`); uma ação aprovada e bloqueada não é repetida nem reformulada: vira `note --validar`, aviso com o comando exato, e o trabalho segue; o `status` a lista como pendência do dono. Teste primeiro no `ledger.py`. Número: ações bloqueadas repetidas por entrega (meta 0). Esforço: M.
 
 ## Em espera (voltam com um sinal)
 
 Cada item diz o sinal que o traz de volta.
 
+- **Tarefas com o mesmo arquivo despachadas em paralelo** (um projeto do autor): duas tarefas que tocam uma linha do mesmo documento rodaram juntas, de propósito, sem custo; o `claim` da entrega atual não confere o `Touches:` contra as tarefas em voo, só o da preparação `--next` confere. Volta se um conflito assim custar uma rodada, ou na segunda vez: o `claim` passa a conferir o cruzamento. Esforço: P.
 - **VALIDAR abertos fora do pending antes do gate** (um projeto do autor): o passo 6 manda rodar o `validar` antes do gate no modo supervisionado, mas o manager não rodou, e o gate teve de rodar de novo para gravar 4 decisões. O passo 7 já prevê o gate de novo quando o `validar` grava uma decisão. A regra foi ignorada uma vez. Volta na segunda vez, ou quando o gate repetido passar de uma hora: então o `status` lista os VALIDAR abertos como pending no modo supervisionado. Esforço: P.
 - **Teste que fixa a versão do produto num literal** (um projeto do autor): candidato a princípio em `checklists/general.md` (conferir o formato e que os arquivos de versão concordam). Volta quando a mesma lição aparecer num segundo projeto. Esforço: P.
 - **Scan de segurança parado no modo autônomo à espera da confirmação de custo** (um projeto do autor): o `claude-security` só aceita a confirmação nas palavras do usuário no pedido que dispara o scan, nunca de arquivo nem de turno agendado; repassar uma frase da aprovação 1 contornaria essa trava. O custo foi o tempo do scan na volta do dono, que já é a hora do gate. Decisão do dono: esperar. Volta quando o `claude-security` aceitar uma confirmação dada antes. Esforço: P.

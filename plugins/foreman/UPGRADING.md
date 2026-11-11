@@ -6,7 +6,7 @@ O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `
 
 ## 1.3.1 — `--criteria` acha os critérios de uma tarefa com hífen no id
 
-Da entrega app-f1b de um projeto do autor.
+Da entrega app-f1b de um projeto do autor (PR #4).
 
 - **`gate.py --criteria <tarefa>` com hífen no id da tarefa** (defeito): para uma tarefa `F1B-3`, o plano escreve `AC-F1B-3-1`, como o manager manda (`AC-<task>-<n>`), mas o `--criteria` só casava a forma junta (`AC-F1B3-1`) e respondia "no criterion of F1B-3" com saída 0: um PASS sem conferir nada, na entrega inteira anterior do mesmo projeto. Agora casa também os segmentos do id da tarefa em sequência, com mais um depois deles; `AC-F1B-31-1` continua fora. O gate completo já traçava todos os ids, então nada chegou ao merge sem teste. Número: tarefas do passo 4.1 conferidas à mão por falha do `--criteria`, por entrega.
 
