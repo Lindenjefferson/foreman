@@ -228,6 +228,15 @@ r = gate("--criteria", "T1")
 check("a task's criteria are the ids with a segment that is the task id, or ends with it after a digit",
       r.returncode == 1 and "AC-074T1-1" in r.stdout and "AC-PL-T1-2" in r.stdout and "AC-074T11-1" not in r.stdout,
       r.stdout + r.stderr)
+commit("plan.md", "# plan\n- AC-F1B-3-1 Given a.\n- AC-PL-F1B-3-2 Given b.\n- AC-F1B-31-1 Given c.\n"
+       "- AC-F1B-4 Given d.\n## Errata\n", "docs: task ids with a hyphen")
+r = gate("--criteria", "F1B-3")
+named = set(re.findall(r"AC-[\w.-]*\w", r.stdout))
+check("a task id with a hyphen, written as is in its criteria (AC-F1B-3-1), finds them, and not those of F1B-31 nor "
+      "the criterion 4 of a task F1B", r.returncode == 1 and named == {"AC-F1B-3-1", "AC-PL-F1B-3-2"},
+      r.stdout + r.stderr)
+r = gate("--criteria", "F1B")
+check("a task F1B still owns AC-F1B-4", r.returncode == 1 and "AC-F1B-4" in r.stdout, r.stdout + r.stderr)
 r = gate("--criteria", "T5")
 check("--criteria for a task the plan defines no criterion of says so and exits 0",
       r.returncode == 0 and "no criterion of T5" in r.stdout, r.stdout + r.stderr)
