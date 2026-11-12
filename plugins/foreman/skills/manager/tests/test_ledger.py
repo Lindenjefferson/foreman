@@ -336,7 +336,7 @@ r = run("note", "--text", "deploy the approved release", "--blocked", "npm run d
 blocked = status(AUTO)["validar"][-1]
 check("note --blocked records an approved action the permission mode refused as a VALIDAR item with its exact "
       "command, recommending that the user run it",
-      r.returncode == 0 and blocked == {"id": "V3", "text": "deploy the approved release", "decision": None,
+      r.returncode == 0 and "noted (VALIDAR)" in r.stdout and blocked == {"id": "V3", "text": "deploy the approved release", "decision": None,
                                         "blocked": "npm run deploy",
                                         "recommend": "the user runs it: npm run deploy"}, (r.stderr, blocked))
 check("text status shows the blocked command with the item",

@@ -1580,7 +1580,7 @@ def note(args):
         entry["validar"] = True
         entry["recommend"] = args.recommend
     write(args.ledger, entry)
-    print("noted (VALIDAR)" if args.validar else "noted")
+    print("noted (VALIDAR)" if entry.get("validar") else "noted")
 
 
 def blocked(item):

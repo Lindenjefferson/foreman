@@ -55,8 +55,8 @@ exits 0 or 1.
 <base> is --base (an error when it is not a commit), or else the base the ledger recorded at start, or else the
 merge base with the default branch. With --report, the gate writes and stages docs/quality-reports/<date>-<slug>.md
 (checks, commits, ledger mode and notes, the VALIDAR list with the user's decision or pending and the command of a
-blocked action, deferred decisions, a changed "Comandos" section and the delivery metrics: findings per cycle and origin, fix rounds, time per cycle, task
-and agent, tokens per agent and task, lines changed per dev task with the share of fix and cleanup, lessons added
+blocked action, deferred decisions, a changed "Comandos" section and the delivery metrics: findings per cycle and
+origin, fix rounds, time per cycle, task and agent, tokens per agent and task, lines changed per dev task with the share of fix and cleanup, lessons added
 and automated, the delivery's clock and the gate's warnings) before running the commands, so the project's own tests check it too (the metrics also give each spec
 or plan review loop its rounds and findings); READY rewrites
 its check lines, NOT READY removes it, and a draft of the same report left staged by a run that was killed is removed
