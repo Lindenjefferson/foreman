@@ -4,6 +4,15 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.5.0 — a conferência do relatório roda a suíte inteira, e o `claim` recusa o mesmo arquivo em paralelo
+
+Da entrega app-f1b de um projeto do autor (PR #6).
+
+- **A conferência do relatório roda a linha "Testes"** (melhoria): antes de integrar, o manager rodava os "Testes afetados", na prática os testes que o `dev` nomeou. Numa entrega, três tipos de teste quebraram sem ninguém ver (o de outra tela que a tarefa tocou, os que leem o repositório inteiro e os de telas que só a árvore de rotas carrega), e um deles custou a rodada de correção fix-2. O projeto empilhou três regras próprias para escolher os testes. Agora a conferência roda a suíte rápida inteira, a linha "Testes"; o `dev` continua com os "Testes afetados" enquanto trabalha. Número: testes quebrados que chegam ao `qa` por tarefa integrada (meta 0).
+- **O `claim` recusa uma tarefa cujo `Touches:` cruza com o de uma tarefa em andamento** (melhoria; estava em espera, voltou na segunda ocorrência): o manager despachou duas vezes, de propósito, duas tarefas que mudam o mesmo arquivo, contra a regra de `references/parallel.md`. Agora o `claim` recusa e nomeia o cruzamento; sem plano ou sem `Touches:` de um dos lados (uma tarefa `fix-N`, ou um `Touches:` que só a Errata muda), passa como antes. Número: tarefas com arquivo em comum rodando juntas, por entrega (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.4.0 — itens adiados sem cópias, e a ação aprovada que o modo auto bloqueia espera o dono
 
 Das entregas de um projeto do autor (PR #5).

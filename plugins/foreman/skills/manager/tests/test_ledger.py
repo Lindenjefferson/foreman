@@ -2379,6 +2379,13 @@ check("a task in flight with no Touches: may meet anything: the list is empty",
 run("release", "--task", "A5", ledger=CFG, cwd=cfg)
 run("claim", "--task", "A2", ledger=CFG, cwd=cfg)
 check("with nothing more that can run, the list is empty", status(CFG)["settings"]["idle"] == [], status(CFG)["settings"])
+r = run("claim", "--task", "A3", ledger=CFG, cwd=cfg)
+check("a task whose Touches: meet a task in flight is refused, naming the task and the file",
+      r.returncode != 0 and "A1" in r.stderr and "a.txt" in r.stderr
+      and "A3" not in [item["task"] for item in status(CFG)["claims"]], r.stderr)
+run("release", "--task", "A1", ledger=CFG, cwd=cfg)
+check("once the task in flight is released, the same claim passes",
+      run("claim", "--task", "A3", ledger=CFG, cwd=cfg).returncode == 0)
 os.remove(os.path.join(cfg, "CLAUDE.local.md"))
 check("a missing CLAUDE.local.md is listed once, as missing",
       {"file": "CLAUDE.local.md", "section": None, "line": None} in status(CFG)["settings"]["unfilled"],
