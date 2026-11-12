@@ -332,6 +332,25 @@ check("validate with an empty decision is refused",
       and status(AUTO)["validar"][0]["decision"] is None)
 check("validate of an unknown id is refused",
       run("validate", "--id", "V9", "--decision", "x", ledger=AUTO).returncode != 0)
+r = run("note", "--text", "deploy the approved release", "--blocked", "npm run deploy", ledger=AUTO)
+blocked = status(AUTO)["validar"][-1]
+check("note --blocked records an approved action the permission mode refused as a VALIDAR item with its exact "
+      "command, recommending that the user run it",
+      r.returncode == 0 and "noted (VALIDAR)" in r.stdout and blocked == {"id": "V3", "text": "deploy the approved release", "decision": None,
+                                        "blocked": "npm run deploy",
+                                        "recommend": "the user runs it: npm run deploy"}, (r.stderr, blocked))
+check("text status shows the blocked command with the item",
+      "VALIDAR V3: deploy the approved release (blocked: npm run deploy)" in run("status", ledger=AUTO).stdout)
+for extra in (["--recommend", "skip it"], ["--validar"]):
+    r = run("note", "--text", "deploy", "--blocked", "npm run deploy", *extra, ledger=AUTO)
+    check(f"--blocked with {extra[0]} is refused: the item always recommends running the command",
+          r.returncode != 0 and "--blocked" in r.stderr and len(status(AUTO)["validar"]) == 3, r.stderr)
+r = run("note", "--text", "try the deploy again", "--blocked", "  npm run deploy ", ledger=AUTO)
+check("the same command blocked again while its item waits is refused: never retried, it waits for the user",
+      r.returncode != 0 and "V3" in r.stderr and len(status(AUTO)["validar"]) == 3, r.stderr)
+run("validate", "--id", "V3", "--decision", "user: ran it", ledger=AUTO)
+check("once the user decided the item, the same command can be recorded again",
+      run("note", "--text", "next release", "--blocked", "npm run deploy", ledger=AUTO).returncode == 0)
 run("mode", "autonomous", ledger=AUTO)
 text = run("status", ledger=AUTO).stdout
 check("text status says autonomous mode never merges into nor pushes the default branch",
@@ -1932,6 +1951,21 @@ check("the latest report is the one committed last, not the last by name, and an
       "Moved keeps the item", r.returncode == 0
       and texts == ["thing (moved here by docs/quality-reports/2026-10-01-alpha.md)",
                     "other (moved here by docs/quality-reports/2026-10-01-alpha.md)"], (r.stdout, texts))
+with open(os.path.join(QUALITY, "2026-10-02-copies.md"), "w", encoding="utf-8", newline="\n") as handle:
+    handle.write("# copies\n\n## Deferred\n\n- D1 thing (moved here by docs/quality-reports/x.md) -> moved to f: later\n"
+                 "- D2 far (moved here by docs/quality-reports/x.md) -> moved to z: not yet\n"
+                 "- D3 thing (moved here by docs/quality-reports/y.md) -> moved to f: later\n"
+                 "- D4 thing -> moved to f: later\n- D5 far -> moved to z: not yet\n")
+subprocess.run(["git", "add", "-f", os.path.join("docs", "quality-reports", "2026-10-02-copies.md")], cwd=repo,
+               check=True, capture_output=True)
+subprocess.run(["git", "commit", "-q", "-m", "docs: quality report copies"], cwd=repo, check=True, capture_output=True)
+r = run("start", "--slug", "f", "--archive", ledger=CARRY)
+COPIES = "docs/quality-reports/2026-10-02-copies.md"
+check("copies of one item, the same text but for the (moved here by ...), carry and pass on once",
+      r.returncode == 0 and "carried 1 items" in r.stdout and "passed on 1 item " in r.stdout
+      and [(item["id"], item["text"]) for item in status(CARRY)["deferred"]]
+      == [("D1", f"thing (moved here by {COPIES})"), ("D2", f"far (moved here by {COPIES})")],
+      (r.stdout, status(CARRY)["deferred"]))
 subprocess.run(["git", "rm", "-q", "-r", os.path.join("docs", "quality-reports")], cwd=repo, check=True,
                capture_output=True)
 subprocess.run(["git", "commit", "-q", "-m", "docs: drop reports"], cwd=repo, check=True, capture_output=True)

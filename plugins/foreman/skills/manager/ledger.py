@@ -20,6 +20,7 @@ Commands
   measure --agent dev|reviewer|qa [--task <id>] [--at <at>] [--seconds <duration>] [--tokens N]
                                                               numbers of a run added
   note    --text <text> [--validar --recommend <text>]        a decision taken on the user's behalf
+  note    --text <text> --blocked <command>                   an approved action the permission mode refused
   validate --id <id> --decision <text>                        the user's decision on a VALIDAR item (V1, V2...)
   waive   --agent reviewer|qa [--task spec|plan] --reason <text>
                                                               accepts the open findings of that agent's latest FAIL
@@ -168,7 +169,8 @@ the first arrow, starts with "moved to" in any case, as a deferred item of the n
 promoted preparation brought), recommending that decision, so it needs a decision before the gate and is never
 forgotten. An item whose decision names another delivery (a slug right after "moved to", then a colon) is passed on
 instead: deferred and resolved with that same decision, so the next report carries it on and only the delivery it
-names decides it. Its text keeps only the last "(moved here by ...)".
+names decides it. Its text keeps only the last "(moved here by ...)", and copies of one item (the same text but for
+those) carry once, the first of them.
 
 Pending check and fix-round limits
 ----------------------------------
@@ -197,7 +199,9 @@ waive is refused when the dev ran after that FAIL (the fix needs its review); it
 counts as that agent's PASS at the head it reviewed. Notes marked --validar (and waivers in autonomous mode) are
 listed apart, numbered V1, V2... in the order written, for the user to confirm on return; validate records the
 decision, and status lists the items still waiting apart from the decided ones. A ledger with no mode entry is
-supervised.
+supervised. note --blocked records an approved action the permission mode refused as a VALIDAR item carrying the exact
+command (whitespace collapsed), recommending that the user run it; the same command again is refused while its item
+waits, so a refused action is never retried as that same command.
 
 Run head, heartbeat and gate runs
 ---------------------------------
@@ -868,9 +872,11 @@ def start(args):
         write(args.ledger, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan})
         print(f"started {args.slug} at {base[:12]}")
     report, moved = carried(args.ledger)
-    passed, offset = [], len(deferred(read(args.ledger)))
-    for number, (text, decision) in enumerate(moved, offset + 1):
-        bare = MOVED_HERE.sub("", text)
+    passed, offset, first = [], len(deferred(read(args.ledger))), {}
+    for text, decision in moved:
+        first.setdefault(MOVED_HERE.sub("", text), decision)
+    moved = list(first.items())
+    for number, (bare, decision) in enumerate(moved, offset + 1):
         text = f"{bare} (moved here by {report})"
         target = MOVED_TO.match(decision)
         if target and target.group(1).lower() != args.slug.lower():
@@ -1553,17 +1559,33 @@ def resume(args):
 def note(args):
     if not read(args.ledger):
         sys.exit("no delivery started: run start first")
-    if args.recommend and not args.validar:
+    if args.blocked is not None and (args.validar or args.recommend):
+        sys.exit("--blocked goes alone: its item is already VALIDAR and recommends that the user run the command")
+    if args.recommend and not args.validar and args.blocked is None:
         sys.exit("--recommend goes with --validar: a plain note records what is already decided and waits for nobody")
     if args.validar and not args.recommend:
         sys.exit("--validar needs --recommend: say what you would decide and why, so the user reads the item and the "
                  "recommendation together")
     entry = {"type": "note", "text": args.text}
-    if args.validar:
+    if args.blocked is not None:
+        command = " ".join(args.blocked.split())
+        if not command:
+            sys.exit("--blocked needs the exact command the permission mode refused")
+        waiting = next((item for item in validar(read(args.ledger))
+                        if item.get("blocked") == command and item["decision"] is None), None)
+        if waiting:
+            sys.exit(f"{command} is already {waiting['id']}, waiting for the user: never retry nor rephrase it")
+        entry.update(validar=True, blocked=command, recommend=f"the user runs it: {command}")
+    elif args.validar:
         entry["validar"] = True
         entry["recommend"] = args.recommend
     write(args.ledger, entry)
-    print("noted (VALIDAR)" if args.validar else "noted")
+    print("noted (VALIDAR)" if entry.get("validar") else "noted")
+
+
+def blocked(item):
+    """A VALIDAR item's text, with the command the permission mode refused when it has one."""
+    return item["text"] + (f" (blocked: {item['blocked']})" if item.get("blocked") else "")
 
 
 def validar(entries):
@@ -1571,7 +1593,7 @@ def validar(entries):
     for entry in entries:
         if entry["type"] == "note" and entry.get("validar"):
             items.append({"id": f"V{len(items) + 1}", "text": entry["text"], "decision": None,
-                          **advice_of(entry)})
+                          **({"blocked": entry["blocked"]} if entry.get("blocked") else {}), **advice_of(entry)})
         elif entry["type"] == "validate":
             decisions[entry["id"]] = entry["decision"]
     for item in items:
@@ -2268,8 +2290,10 @@ def status(args):
         for text in report["notes"]:
             print(f"note: {text}")
         for item in report["validar"]:
-            print(f"VALIDAR {item['id']}: {item['text']}" + advice(item) if item["decision"] is None
-                  else f"validated {item['id']}: {item['text']} -> {item['decision']}")
+            if item["decision"] is None:
+                print(f"VALIDAR {item['id']}: {blocked(item)}" + advice(item))
+            else:
+                print(f"validated {item['id']}: {blocked(item)} -> {item['decision']}")
         for item in items:
             if item["decision"]:
                 print(f"deferred {item['id']}: {item['text']} -> {item['decision']}")
@@ -2589,6 +2613,8 @@ def main():
     command.add_argument("--text", required=True)
     command.add_argument("--validar", action="store_true", help="the user validates this decision on return")
     command.add_argument("--recommend", help="what you would decide and why, read with the item")
+    command.add_argument("--blocked", metavar="COMMAND",
+                         help="an approved action the permission mode refused: a VALIDAR item for the user to run")
     command.set_defaults(run=note)
     command = commands.add_parser("measure")
     command.add_argument("--agent", required=True, choices=sorted(VERDICTS))
