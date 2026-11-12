@@ -43,7 +43,10 @@ Claims, leftover copies and pauses
 
 A claim is written when the dev is dispatched and freed by the dev's add (or release); status lists the tasks in
 flight and the gate waits for them, so a manager resuming after a compaction sees which runs it still owes a report.
-claim refuses a task that is in flight or already DONE in the current cycle, so one task never runs twice by mistake.
+claim refuses a task that is in flight or already DONE in the current cycle, so one task never runs twice by mistake,
+and one whose Touches: line in the plan meets the Touches: of a task in flight (overlapping as in the preparation
+below), naming each collision, so two tasks never change the same file at once; with no plan or no Touches: on either
+side (a fix-N task, or a Touches: only an Errata line changes), nothing says they collide and the claim passes.
 status lists each copy left over, pending (step leftover, with its action) until it is gone, so the gate waits: a
 worktree under ../_temp/<project>-worktrees/ (project being the main worktree's folder) or .claude/worktrees/ with no
 claim, its HEAD in the delivery head and nothing uncommitted, a folder of ../_temp/<project>-worktrees/ with no .git
@@ -1466,11 +1469,14 @@ def collisions(args, entries):
     done = {entry["task"] for entry in runs(present) if entry["agent"] == "dev" and entry["verdict"] in DONE}
     todo = [task for tasks in plan_cycles(present).values() for task in tasks if task not in done]
     todo += [task for task in in_flight(present) if task not in todo]
-    text = plan_text(present, current)
-    for task in todo:
-        for other in touch_items(plan_field(text, task, "Touches")):
-            found += [f"{item} ({task} of {slug} touches {other})" for item in touches if overlaps(item, other)]
-    return found
+    return found + crossings(touches, plan_text(present, current), todo, f" of {slug}")
+
+
+def crossings(touches, text, tasks, where=""):
+    """Each item of touches that meets the Touches: line of one of tasks in the plan text, as "<item> (<task> touches
+    <other>)"; a task with no Touches: line meets nothing."""
+    return [f"{item} ({task}{where} touches {other})" for task in tasks
+            for other in touch_items(plan_field(text, task, "Touches")) for item in touches if overlaps(item, other)]
 
 
 def claim(args):
@@ -1485,6 +1491,10 @@ def claim(args):
     if args.task in held:
         sys.exit(f"{args.task} is already claimed ({held[args.task]}): its dev run is in flight; "
                  f"if that run was lost, release --task {args.task}")
+    text = plan_text(entries, args.ledger)
+    crossed = crossings(touch_items(plan_field(text, args.task, "Touches")), text, held)
+    if crossed:
+        sys.exit(f"{args.task} collides with a task in flight: {'; '.join(crossed)}; it waits for that task's add")
     groups = cycles(entries)
     done = cycle_state(groups[-1], interface=first(groups))[0]["tasks"].get(args.task)
     if done and done["verdict"] in DONE:
