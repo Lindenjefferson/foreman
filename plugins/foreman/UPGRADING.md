@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.6.0 — a revisão de design confere primeiro as escalas globais
+
+Da entrega app-f1b de um projeto do autor (PR #7).
+
+- **Escalas globais antes das telas** (melhoria): a escala de texto do app ficou menor que a do mock (base 14 contra 16) desde a primeira entrega com tela, passou pela revisão de design do Ciclo 1 e só apareceu no Ciclo 2, quando todas as telas já entregues tinham de ser corrigidas e recapturadas. Agora cada revisão de design (`references/screens.md`) mede primeiro, numa captura, o tamanho do texto base, a unidade de espaçamento e a densidade contra o mock, e só então compara as telas. Número: achados de escala global depois do primeiro ciclo com tela, por projeto (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.5.0 — a conferência do relatório roda a suíte inteira, e o `claim` recusa o mesmo arquivo em paralelo
 
 Da entrega app-f1b de um projeto do autor (PR #6).
