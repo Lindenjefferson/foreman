@@ -10,7 +10,7 @@ Nenhuma no momento.
 
 ## Backlog
 
-Nenhum no momento.
+- **Mudança de escala global roda a suíte de interface inteira na própria tarefa** (melhoria; noite autônoma da app-f1b de um projeto do autor, continuação da 1.6.0): a fix-8 subiu a escala de texto do app inteiro e rodou só os testes que tocou; os formulários cresceram, o teclado passou a cobrir os alvos e 9 de 25 fluxos de interface quebraram, vistos só no QA conjunto, o que custou a rodada de correção fix-12 (12.276 s). Regra proposta: uma tarefa que muda uma escala global (texto base, unidade de espaçamento, densidade) roda a suíte de interface inteira antes do relatório, e o `references/screens.md` diz isso no mesmo lugar das escalas globais. Tentar antes como checagem: o `Touches:` do plano marcar o arquivo de tokens e o `gate.py` ou o `add` cobrar o `qa --interface` da tarefa. Número: fluxos de interface quebrados por mudança de escala que chegam ao QA (meta 0). Esforço: P.
 
 ## Em espera (voltam com um sinal)
 
