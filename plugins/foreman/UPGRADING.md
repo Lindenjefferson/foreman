@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.6.1 — juntar ciclos do plano solta as execuções já retidas
+
+Da entrega app-f1b de um projeto do autor.
+
+- **Ciclos juntados no `scope`** (defeito): com o aval do dono para juntar os Ciclos 2 a 4 num QA só, o manager regravou o `scope` do Ciclo 2 com as tarefas dos três e removeu os outros dois, mas as execuções de `dev` já gravadas como retidas para os Ciclos 3 e 4 continuavam "held for plan cycle", porque o `ledger.py` lia o ciclo gravado em cada execução, não o `scope` atual. Agora o `scope` atual decide: uma execução retida cujo ciclo foi juntado ao aberto entra nele. Número: execuções retidas para um ciclo que não existe mais no `scope` (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.6.0 — a revisão de design confere primeiro as escalas globais
 
 Da entrega app-f1b de um projeto do autor (PR #7).

@@ -193,7 +193,8 @@ Tasks of a later plan cycle
 
 With scope recorded, a task of a later plan cycle may be claimed and added while the current cycle is open: its run is
 held ("after": the plan cycle), out of this cycle, and opens the next one once this closes, so the next cycle's range
-starts at the head that closed this one.
+starts at the head that closed this one. The scope as recorded now decides which runs are held: re-scoping a later
+cycle into the open one releases its held runs into it.
 
 Waivers and VALIDAR items
 -------------------------
@@ -629,10 +630,11 @@ def first(groups):
 
 def cycles(entries):
     """The cycles' runs; a run held for a later plan cycle opens the next cycle once the one open when it was added
-    closes, so that cycle's range starts where this one ends."""
+    closes, so that cycle's range starts where this one ends. The scope read now decides: a run whose plan cycle was
+    since merged into the open one joins it."""
     groups, current, closed, waiting = [], [], False, []
     for entry in runs(entries):
-        if entry.get("after") and not closed:
+        if entry.get("after") and not closed and later_cycle(entries, current, entry["task"]):
             waiting.append(entry)
             continue
         if closed and entry["agent"] == "dev" and not is_task(entry, FOLLOW_UP):
