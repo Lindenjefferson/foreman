@@ -503,6 +503,19 @@ check("once the cycle closes, the held run opens the next cycle from the closing
 check("a task of the same plan cycle is still added while its cycle is open",
       add("dev", "DONE", "T3.1", ledger=NEXT).returncode == 0)
 
+MERGED = ".superpowers/merged.jsonl"
+run("start", "--slug", "merged", ledger=MERGED)
+run("scope", "--cycle", "2", "--tasks", "T2.1", ledger=MERGED)
+run("scope", "--cycle", "3", "--tasks", "T3.1", ledger=MERGED)
+add("dev", "DONE", "T2.1", ledger=MERGED)
+add("dev", "DONE", "T3.1", ledger=MERGED)
+run("scope", "--cycle", "2", "--tasks", "T2.1,T3.1", ledger=MERGED)
+run("scope", "--cycle", "3", "--tasks", "", ledger=MERGED)
+state = status(MERGED)
+check("a run held for a plan cycle later merged into the open one joins it: the scope read now wins",
+      "T3.1" in state["tasks"] and not any("held" in item for item in state["pending"]),
+      (state["tasks"], state["pending"]))
+
 EXTEND = ".superpowers/extend.jsonl"
 run("start", "--slug", "extend", ledger=EXTEND)
 add("dev", "DONE", "T1", ledger=EXTEND)
