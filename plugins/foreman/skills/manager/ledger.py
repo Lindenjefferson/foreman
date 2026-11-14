@@ -147,7 +147,7 @@ claim of a task that collides with nothing of the current delivery (the ledger.j
 run and release: every item of the task's Touches: line (each `quoted` path, and each other comma- or
 semicolon-separated item) must differ from every file the current delivery changed (<its base>..HEAD) and from every
 Touches: item of its tasks not done (its scope, and its claims in flight), a folder ending in / colliding with what is
-inside it; a task with no Touches: line is refused, and so is each collision, naming it. The run stays in the
+inside it and a module doc (docs/modulos/NN-*.md) with nothing, since the manager merges it on integrating; a task with no Touches: line is refused, and so is each collision, naming it. The run stays in the
 preparation and goes with it into the promotion; its own status is never ready for the gate and leaves leftovers and
 disk to the current one. Its worktree, named by start --next --worktree <path> (or by that same command once it is
 open, when it named none), and the worktrees of its claims are no leftover of the current delivery, nor their
@@ -1450,6 +1450,10 @@ def touch_items(line):
 
 
 def overlaps(one, other):
+    """Two Touches: items meet: the same path, or a folder ending in / and what is inside it. A module doc
+    (docs/modulos/NN-*.md) meets nothing: tasks that share one run together, and the manager merges it on integrating."""
+    if any(re.fullmatch(r"docs/modulos/\d+-[^/]+\.md", item) for item in (one, other)):
+        return False
     return one == other or any(a.endswith("/") and b.startswith(a) for a, b in ((one, other), (other, one)))
 
 

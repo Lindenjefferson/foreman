@@ -443,6 +443,7 @@ def ledger_state(cwd):
 def gated(cwd, ref, state):
     """True when the standing approval covers publishing ref: see the docstring."""
     ledger, path, entries = state
+    cwd = git_out(cwd, "rev-parse", "--show-toplevel") or cwd  # the report's paths are from the root, not a subfolder
     approval, slug = ledger.standing(path), entries and entries[0].get("slug")
     commit = ref and git_out(cwd, "rev-parse", "--verify", "--quiet", ref + "^{commit}")
     if not approval or not slug or not commit:
