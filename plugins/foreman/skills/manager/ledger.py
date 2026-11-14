@@ -1771,7 +1771,9 @@ def plan_text(entries, ledger):
 
 
 def plan_field(text, task, name):
-    """The task's Goal: or Depends on: line, from its heading to the next heading of the same level or above."""
+    """The task's Goal:, Depends on: or Touches: line, from its heading to the next heading of the same level or above;
+    a label with no value on its line takes the sub-items indented below it, each by its `quoted` paths or else whole,
+    joined by commas."""
     heading = re.search(r"^(#+)[ \t]+[*_`]*" + re.escape(task) + r"(?![\w-]|\.\w)[^\n]*$", text, re.MULTILINE)
     if not heading:
         return None
@@ -1779,8 +1781,18 @@ def plan_field(text, task, name):
     rest = text[heading.end():]
     end = re.search(r"^#{1,%d}[ \t]" % level, rest, re.MULTILINE)
     section = rest[:end.start()] if end else rest
-    field = re.search(r"^[ \t]*(?:[-*+][ \t]+)?[*_]*" + name + r":[*_]*[ \t]*(.+)$", section, re.MULTILINE)
-    return field.group(1).strip() if field else None
+    field = re.search(r"^([ \t]*)(?:[-*+][ \t]+)?[*_]*" + name + r":[*_]*[ \t]*(.*)$", section, re.MULTILINE)
+    if not field:
+        return None
+    if field.group(2).strip():
+        return field.group(2).strip()
+    items = []
+    for line in section[field.end():].lstrip("\r\n").splitlines():
+        item = re.match(r"([ \t]+)[-*+][ \t]+(.+)$", line)
+        if not item or len(item.group(1)) <= len(field.group(1)):
+            break
+        items.append(", ".join(f"`{path}`" for path in re.findall(r"`([^`]+)`", item.group(2))) or item.group(2).strip())
+    return ", ".join(items) or None
 
 
 def plan_tasks(entries, plan, held, ledger):

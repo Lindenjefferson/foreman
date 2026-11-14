@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.6.2 — `Touches:` com a lista em sub-itens
+
+Da entrega barra-faixa-no-meio de um projeto do autor.
+
+- **`Touches:` em negrito com os caminhos em sub-itens** (defeito): `- **Touches:**` seguido de um sub-item por arquivo era lido como `*`, o asterisco que fecha o negrito, e o `claim` via colisão com tudo; duas tarefas independentes rodaram uma depois da outra. Agora um rótulo sem valor na própria linha (`Touches:`, `Depends on:`, `Goal:`) toma os sub-itens recuados logo abaixo dele: os caminhos entre crases de cada um, ou o sub-item inteiro quando ele não tem nenhum. Número: tarefas serializadas por um `Touches:` mal lido (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.6.1 — juntar ciclos do plano solta as execuções já retidas
 
 Da entrega app-f1b de um projeto do autor.
