@@ -2814,5 +2814,18 @@ if os.name == "nt":
     held = ledger_module.holders(tree, [(top + 8, 0, f"node {bash_form}/server.js")])
     check("holders also reads the Git Bash form of a Windows path", len(held) == 1, held)
 
+# A bold label with its list in sub-items below: the value is the sub-items, never the closing asterisk.
+listed = ("### T1 — a\n\n- **Touches:**\n  - `src/A.java`: what changes\n  - `src/B.java`: what changes\n"
+          "- **Depends on:**\n  - none\n\n### T2 — b\n\n- **Touches:** `src/C.java`\n- **Goal:**\n\n### T3\n")
+touched = ledger_module.touch_items(ledger_module.plan_field(listed, "T1", "Touches"))
+check("Touches: in bold with its paths in sub-items reads each quoted path, not '*'",
+      touched == ["src/A.java", "src/B.java"], touched)
+check("a sub-item with no quoted path is read whole",
+      ledger_module.plan_field(listed, "T1", "Depends on") == "none", ledger_module.plan_field(listed, "T1", "Depends on"))
+check("a bold label with a value on its line still reads it", ledger_module.plan_field(listed, "T2", "Touches")
+      == "`src/C.java`", ledger_module.plan_field(listed, "T2", "Touches"))
+check("a bold label with no value and no sub-items reads as no line",
+      ledger_module.plan_field(listed, "T2", "Goal") is None, ledger_module.plan_field(listed, "T2", "Goal"))
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
