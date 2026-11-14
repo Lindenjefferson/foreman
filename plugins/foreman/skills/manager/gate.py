@@ -28,7 +28,7 @@ ledger's latest reviewer run changes anything but the plan, docs/lessons.md, doc
 .foreman-secrets-allow (first-parent commits only, so a merged front is not counted, and tasks are integrated by
 fast-forward or cherry-pick); when "Comandos" has a "Verificação de interface" line and no command the gate runs
 is that line's command, a qa run added with --full whose head differs from HEAD in no file but those
-same exempt files (Full suite, by tree, so a merged front counts); every command of that section passes (lines like
+same exempt files and docs/ (Full suite, by tree, so a merged front counts; the gate runs the Testes line itself); every command of that section passes (lines like
 "- Testes: `<command>`"; Build, Typecheck, Lint, Testes and the optional Auditoria are run, a second line of the same
 kind runs too under its own label, such as "Testes (e2e)", a blank command counts as not configured, and --cmd adds
 or overrides one, or with no command removes it), each in a POSIX shell, as the Bash tool runs them (Git Bash on
@@ -543,6 +543,7 @@ def full_suite(ledger, commands):
     if not found:
         return False, (f"the full qa head {head[:7]} is not in this history: "
                        "run qa on the full suite at the current head")
+    changed = [name for name in changed if not name.startswith("docs/")]
     return not changed, (f"changed after the full qa at {head[:7]}: " + ", ".join(changed) if changed else "")
 
 

@@ -147,7 +147,7 @@ claim of a task that collides with nothing of the current delivery (the ledger.j
 run and release: every item of the task's Touches: line (each `quoted` path, and each other comma- or
 semicolon-separated item) must differ from every file the current delivery changed (<its base>..HEAD) and from every
 Touches: item of its tasks not done (its scope, and its claims in flight), a folder ending in / colliding with what is
-inside it; a task with no Touches: line is refused, and so is each collision, naming it. The run stays in the
+inside it and a module doc (docs/modulos/NN-*.md) with nothing, since the manager merges it on integrating; a task with no Touches: line is refused, and so is each collision, naming it. The run stays in the
 preparation and goes with it into the promotion; its own status is never ready for the gate and leaves leftovers and
 disk to the current one. Its worktree, named by start --next --worktree <path> (or by that same command once it is
 open, when it named none), and the worktrees of its claims are no leftover of the current delivery, nor their
@@ -269,7 +269,7 @@ Status data and plan progress
 
 status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
 worktree, origin, tip, head_moved} per task in flight; paused: {text, at} or null; full_qa: the latest qa run added
-with --full, or null; after_full_qa: the files changed since its head (the quality reports aside), or null, and
+with --full, or null; after_full_qa: the files changed since its head (docs/ aside), or null, and
 the text says the gate's Full suite will ask for the full qa again. from: the commit the current cycle's diff starts
 at, for the reviewer's and qa's range: the base for cycle 1, else the head the run that closed the previous cycle
 recorded (a commit made after it and before this cycle's first task, such as an errata, falls in the range too).
@@ -1350,14 +1350,14 @@ def tip(entry):
 
 
 def after_full(full, ledger):
-    """The files changed since the latest qa --full's head (the quality reports aside), or None with none: the gate's
-    Full suite check asks for the full qa again over them."""
+    """The files changed since the latest qa --full's head (docs/ aside), or None with none: the gate's Full suite
+    check asks for the full qa again over them."""
     if not full or not full.get("head"):
         return None
     result = subprocess.run(["git", "diff", "--name-only", full["head"], "HEAD"], capture_output=True, text=True,
                             cwd=os.path.dirname(os.path.abspath(ledger)))
     changed = [name for name in result.stdout.splitlines()
-               if name and not name.startswith("docs/quality-reports/")] if result.returncode == 0 else []
+               if name and not name.startswith("docs/")] if result.returncode == 0 else []
     return changed or None
 
 
@@ -1450,6 +1450,10 @@ def touch_items(line):
 
 
 def overlaps(one, other):
+    """Two Touches: items meet: the same path, or a folder ending in / and what is inside it. A module doc
+    (docs/modulos/NN-*.md) meets nothing: tasks that share one run together, and the manager merges it on integrating."""
+    if any(re.fullmatch(r"docs/modulos/\d+-[^/]+\.md", item) for item in (one, other)):
+        return False
     return one == other or any(a.endswith("/") and b.startswith(a) for a, b in ((one, other), (other, one)))
 
 

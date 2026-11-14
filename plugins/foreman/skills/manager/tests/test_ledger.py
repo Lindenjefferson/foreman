@@ -1107,7 +1107,10 @@ check("full_qa is the latest full qa run across the whole delivery, even from an
 check("no commit after the full qa: no warning", status(FULL)["after_full_qa"] is None, status(FULL)["after_full_qa"])
 with open(os.path.join(repo, "docs-after.md"), "w", encoding="utf-8", newline="\n") as handle:
     handle.write("a doc fixed after the final qa\n")
-subprocess.run(["git", "add", "docs-after.md"], cwd=repo, check=True, capture_output=True)
+os.makedirs(os.path.join(repo, "docs", "modulos"), exist_ok=True)
+with open(os.path.join(repo, "docs", "modulos", "01-after.md"), "w", encoding="utf-8", newline="\n") as handle:
+    handle.write("a module doc after the final qa: the gate does not ask for the full qa over it\n")
+subprocess.run(["git", "add", "docs-after.md", "docs"], cwd=repo, check=True, capture_output=True)
 subprocess.run(["git", "commit", "-q", "-m", "docs after the full qa"], cwd=repo, check=True, capture_output=True)
 state, text = status(FULL), run("status", ledger=FULL).stdout
 check("a commit after the full qa is named before the gate, which would ask for the full qa again",
@@ -2826,6 +2829,14 @@ check("a bold label with a value on its line still reads it", ledger_module.plan
       == "`src/C.java`", ledger_module.plan_field(listed, "T2", "Touches"))
 check("a bold label with no value and no sub-items reads as no line",
       ledger_module.plan_field(listed, "T2", "Goal") is None, ledger_module.plan_field(listed, "T2", "Goal"))
+
+# Tasks that share only a module doc run together (references/parallel.md: "module docs aside").
+shared = "### T1\n- Touches: `src/a.kt`, `docs/modulos/02-x.md`\n### T2\n- Touches: `src/b.kt`, `docs/modulos/02-x.md`\n"
+crossed = ledger_module.crossings(["src/b.kt", "docs/modulos/02-x.md"], shared, ["T1"])
+check("two tasks that cross only in a module doc do not collide", crossed == [], crossed)
+check("a module doc still collides with nothing else, and other files still collide",
+      ledger_module.crossings(["src/a.kt"], shared, ["T1"]) == ["src/a.kt (T1 touches src/a.kt)"],
+      ledger_module.crossings(["src/a.kt"], shared, ["T1"]))
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

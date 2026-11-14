@@ -357,6 +357,10 @@ check("approve records a standing approval", r.returncode == 0, r.stderr)
 for command in PUBLISH:
     check(f"standing approval and a READY report at this tree: passes {command!r}",
           run(repo, command)[1] is None, str(run(repo, command)))
+os.makedirs(os.path.join(repo, "sub"), exist_ok=True)
+for command in PUBLISH:
+    check(f"standing approval, the session in a subfolder of the repository: passes {command!r}",
+          run(os.path.join(repo, "sub"), command)[1] is None, str(run(os.path.join(repo, "sub"), command)))
 check("standing approval: a push of every branch is still denied", reaches_main("git push --all"))
 commit_file("b.txt", "after the gate\n")
 check("standing approval: a commit after the READY report is denied", reaches_main("gh pr merge 3 --merge"))
