@@ -269,7 +269,7 @@ Status data and plan progress
 
 status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
 worktree, origin, tip, head_moved} per task in flight; paused: {text, at} or null; full_qa: the latest qa run added
-with --full, or null; after_full_qa: the files changed since its head (the quality reports aside), or null, and
+with --full, or null; after_full_qa: the files changed since its head (docs/ aside), or null, and
 the text says the gate's Full suite will ask for the full qa again. from: the commit the current cycle's diff starts
 at, for the reviewer's and qa's range: the base for cycle 1, else the head the run that closed the previous cycle
 recorded (a commit made after it and before this cycle's first task, such as an errata, falls in the range too).
@@ -1350,14 +1350,14 @@ def tip(entry):
 
 
 def after_full(full, ledger):
-    """The files changed since the latest qa --full's head (the quality reports aside), or None with none: the gate's
-    Full suite check asks for the full qa again over them."""
+    """The files changed since the latest qa --full's head (docs/ aside), or None with none: the gate's Full suite
+    check asks for the full qa again over them."""
     if not full or not full.get("head"):
         return None
     result = subprocess.run(["git", "diff", "--name-only", full["head"], "HEAD"], capture_output=True, text=True,
                             cwd=os.path.dirname(os.path.abspath(ledger)))
     changed = [name for name in result.stdout.splitlines()
-               if name and not name.startswith("docs/quality-reports/")] if result.returncode == 0 else []
+               if name and not name.startswith("docs/")] if result.returncode == 0 else []
     return changed or None
 
 

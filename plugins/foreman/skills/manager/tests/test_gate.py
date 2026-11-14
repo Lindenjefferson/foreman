@@ -665,6 +665,10 @@ commit("docs/lessons.md", "- a lesson\n", "docs: lesson")
 r = gate("--base", "main")
 check("Full suite still PASSes when only docs/lessons.md changed after it",
       re.search(r"Full suite:\s+PASS", r.stdout), r.stdout)
+commit("docs/guia.md", "# Guia\n", "docs: a doc after the full qa")
+r = gate("--base", "main")
+check("Full suite still PASSes when only files under docs/ changed after it (decisão do dono)",
+      re.search(r"Full suite:\s+PASS", r.stdout), r.stdout)
 commit("late.txt", "late\n", "feat: late")
 ledger_cmd("add", "--agent", "dev", "--task", "fix-3", "--verdict", "DONE")
 ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")

@@ -1107,7 +1107,10 @@ check("full_qa is the latest full qa run across the whole delivery, even from an
 check("no commit after the full qa: no warning", status(FULL)["after_full_qa"] is None, status(FULL)["after_full_qa"])
 with open(os.path.join(repo, "docs-after.md"), "w", encoding="utf-8", newline="\n") as handle:
     handle.write("a doc fixed after the final qa\n")
-subprocess.run(["git", "add", "docs-after.md"], cwd=repo, check=True, capture_output=True)
+os.makedirs(os.path.join(repo, "docs", "modulos"), exist_ok=True)
+with open(os.path.join(repo, "docs", "modulos", "01-after.md"), "w", encoding="utf-8", newline="\n") as handle:
+    handle.write("a module doc after the final qa: the gate does not ask for the full qa over it\n")
+subprocess.run(["git", "add", "docs-after.md", "docs"], cwd=repo, check=True, capture_output=True)
 subprocess.run(["git", "commit", "-q", "-m", "docs after the full qa"], cwd=repo, check=True, capture_output=True)
 state, text = status(FULL), run("status", ledger=FULL).stdout
 check("a commit after the full qa is named before the gate, which would ask for the full qa again",

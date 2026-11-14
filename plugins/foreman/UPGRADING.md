@@ -4,9 +4,11 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
-## 1.6.3 — a aprovação permanente vale numa subpasta, e o doc de módulo não serializa tarefas
+## 1.7.0 — documentação depois do `qa` da suíte inteira não pede a suíte de novo
 
-Da entrega cartao-segue-a-fonte de um projeto do autor.
+Das entregas barra-faixa-no-meio e cartao-segue-a-fonte de um projeto do autor.
+
+- **Documentação depois do `qa --full`** (melhoria, decisão do dono): um commit só em `docs/` depois do último `qa --full` pedia a suíte inteira de novo na checagem Full suite do gate, e o `status` o apontava; foram três `qa --full` a mais em duas entregas, um deles com o emulador. Agora o que muda em `docs/` depois dele não conta. O gate continua rodando a linha Testes por conta própria. Número: `qa --full` repetidos só por documentação (meta 0).
 
 - **Push barrado com a aprovação permanente** (defeito): em modo autônomo, com `approve --until 0.8.0` e o gate READY em v0.8.0, o `bash-guard.py` recusou o `git push origin main` porque a sessão estava numa subpasta do repositório: os caminhos de `docs/quality-reports/` eram lidos a partir dela, e o relatório não era achado. O merge local passa pela mesma conferência e caía no mesmo erro numa subpasta. Agora a conferência da aprovação roda a partir da raiz do repositório. Número: publicações cobertas pela aprovação permanente e barradas pelo hook (meta 0).
 - **Tarefas que só dividem o doc de módulo** (defeito): o `references/parallel.md` despacha juntas as tarefas cujo `Touches:` só se cruza em docs de módulo, mas o `claim` as recusava; a T3 e a T4 esperaram a T2 por `docs/modulos/02-*.md`. Agora um doc de módulo (`docs/modulos/NN-*.md`) não cruza com nada no `claim`, na lista das tarefas que podem rodar juntas e na preparação da próxima entrega; o manager junta o doc na integração, como o `parallel.md` já diz. Número: tarefas serializadas só por um doc de módulo (meta 0).
