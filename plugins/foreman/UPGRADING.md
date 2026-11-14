@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.6.3 — a aprovação permanente vale com a sessão numa subpasta
+
+Da entrega cartao-segue-a-fonte de um projeto do autor.
+
+- **Push barrado com a aprovação permanente** (defeito): em modo autônomo, com `approve --until 0.8.0` e o gate READY em v0.8.0, o `bash-guard.py` recusou o `git push origin main` porque a sessão estava numa subpasta do repositório: os caminhos de `docs/quality-reports/` eram lidos a partir dela, e o relatório não era achado. O merge local tinha passado porque veio de outra pasta. Agora a conferência da aprovação roda a partir da raiz do repositório. Número: publicações cobertas pela aprovação permanente e barradas pelo hook (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.6.2 — `Touches:` com a lista em sub-itens
 
 Da entrega barra-faixa-no-meio de um projeto do autor.
