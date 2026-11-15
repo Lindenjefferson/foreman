@@ -738,6 +738,10 @@ commit("README.md", "# p\n\nVeja [a doc](docs/README.md) e [o guia](docs/guia.md
 r = gate("--base", "main")
 check("Docs FAILs naming a dead relative link of the root README",
       re.search(r"Docs:\s+FAIL", r.stdout) and "README.md -> docs/guia.md" in r.stdout, r.stdout)
+commit("README.md", "# p\n\n## Estado\n\n_(o que o produto faz hoje)_\n", "docs: readme template")
+r = gate("--base", "main")
+check("Docs FAILs while a module exists and the root README still holds a placeholder",
+      re.search(r"Docs:\s+FAIL", r.stdout) and "README.md still holds a placeholder" in r.stdout, r.stdout)
 os.makedirs(os.path.join(repo, "docs", "specs"))
 commit("docs/specs/a(1).md", "x\n", "docs: a file with parentheses")
 commit("README.md", "# p\n\nVeja [a doc](docs/README.md) e [a cópia](docs/specs/a(1).md).\n", "docs: readme fixed")

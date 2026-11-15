@@ -34,7 +34,7 @@ Os três usam o **mesmo slug da entrega**, e cada pasta aparece na primeira entr
 ```markdown
 # Módulo N — Nome
 
-**Status**: 📋 planejado | 🚧 em desenvolvimento | ✅ implementado
+**Status**: 📋 planejado | 🚧 em desenvolvimento | ✅ implementado — uma frase do que existe hoje, sem tarefa nem data; o histórico fica no git e nos planos
 
 **Spec de origem**: <arquivo e seção>
 

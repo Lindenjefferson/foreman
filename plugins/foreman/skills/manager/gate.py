@@ -12,7 +12,7 @@ task id or ends with it right after a digit (AC-T3-2, AC-PL-T3-2 and AC-074T3-2 
 for a task id with a hyphen, those holding the segments it splits into, with one more after them (AC-F1B-3-1).
 
 Checks, in order: nothing is pending in the ledger (the current cycle is closed, every deferred item has a final
-decision, a delivery marked sensitive had its security scan and no copy of an integrated task is left over); the tree is clean; the documentation the kickoff prepared stays whole (with a docs/README.md: docs/arquitetura.md, the patterns every task follows, exists and, once a module doc docs/modulos/NN-*.md is tracked, holds no _(...)_ placeholder; the index names every tracked module doc; every entry of docs/ is in the map (README.md, arquitetura.md, operacao.md
+decision, a delivery marked sensitive had its security scan and no copy of an integrated task is left over); the tree is clean; the documentation the kickoff prepared stays whole (with a docs/README.md: docs/arquitetura.md, the patterns every task follows, exists and, once a module doc docs/modulos/NN-*.md is tracked, it and the root README hold no _(...)_ placeholder; the index names every tracked module doc; every entry of docs/ is in the map (README.md, arquitetura.md, operacao.md
 or operacao/, lessons.md, modulos/ with module docs only, discovery/, specs/, plans/, mockups/, quality-reports/, or a
 folder or file the index names); and no relative link of README.md, docs/README.md or docs/arquitetura.md points to a missing file); the files of the
 "Versão" line of "Comandos" (space-separated) hold one version x.y.z (after a version, versionName or __version__ key,
@@ -309,8 +309,9 @@ def docs():
                  if os.path.basename(path) not in index]
     if not os.path.isfile(PATTERNS):
         problems.append(f"no {PATTERNS}: the patterns every task follows (the kickoff's template)")
-    elif modules and "_(" in open(PATTERNS, encoding="utf-8").read():
-        problems.append(f"{PATTERNS} still holds a placeholder _(...)_ while the project has modules")
+    for page in (PATTERNS, "README.md"):
+        if modules and os.path.isfile(page) and "_(" in open(page, encoding="utf-8").read():
+            problems.append(f"{page} still holds a placeholder _(...)_ while the project has modules")
     for page in ("README.md", "docs/README.md", PATTERNS):
         if not os.path.isfile(page):
             continue
