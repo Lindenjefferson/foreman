@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Secret scan, UTF-8 and invisible-character checks for git commits, run as a native git pre-commit hook.
+"""Secret, personal-data, UTF-8 and invisible-character checks for git commits, run as a native git pre-commit hook.
 
   --install-pre-commit  writes a pre-commit hook that runs --pre-commit. An existing pre-commit hook
                         is kept as pre-commit.foreman-chained and runs first. A pre-push hook left by
@@ -39,6 +39,18 @@ direction control (U+202A to U+202E, U+2066 to U+2069), a Tag character (U+E0000
 the very start of a file are refused with file, first line and first code point; this is how instructions are
 hidden in prompt files. The joiner and non-joiner of emoji and of Persian or Indic text (U+200C, U+200D) and the
 direction marks (U+200E, U+200F) are not flagged. Like the UTF-8 check it reads added lines only and has no allowlist.
+
+Personal data: added lines with an absolute home path (C:\\Users\\<name>\\, C:/Users/<name>/, /Users/<name>/,
+/home/<name>/, the last two not inside a URL) are blocked, unless <name> is a placeholder: user, username, usuario,
+runner, you, yourname, name, me, example, public, default, or a name opening with $, %, {, < or *. The owner's terms
+live in one file outside any repository, which `git config --global foreman.terms` names: one term per line (names,
+e-mails, domains, other project names; # starts a comment) and lines `autor <e-mail>` listing the e-mails allowed
+as commit author. A term equal to the repository's folder name is ignored; any other, matched as a whole word in any
+case, blocks the added line. --pre-commit also refuses an author e-mail (git var GIT_AUTHOR_IDENT) outside the autor
+lines, and --range flags each commit whose author or committer e-mail is outside them and each commit-message line
+with a term (fingerprint of "commit:<sha>" and the line); the autor checks apply only when the list has an autor line.
+No message prints the term, the path or the e-mail: file and line, or the commit, and the fingerprint, freed by the
+same allowlist below. Without the list only the home-path check applies, silently, so a stranger's clone works.
 
 UTF-8 check: the same --pre-commit run refuses added lines of text files that do not decode as UTF-8 (typically
 Latin-1 or Windows-1252 text saved by an old editor) and names each file with its first bad line; the fix is to
@@ -296,7 +308,53 @@ def load_allowlist(cwd, rev=""):
     return {entry for entry in entries if re.fullmatch(r"[0-9a-f]{64}", entry)}
 
 
-def scan(diff, names, allowed=frozenset()):
+HOME_PATH = re.compile(r"(?<![\w])[A-Za-z]:[\\/]+[Uu]sers[\\/]+([^\\/\s'\"`<>|:*?]+)[\\/]"
+                       r"|(?<![\w.:/~-])/(?:Users|home)/([^/\s'\"`<>]+)/")
+HOME_PLACEHOLDERS = {"user", "username", "usuario", "runner", "you", "yourname", "name", "me", "example", "public",
+                     "default"}
+
+
+def home_path(line):
+    for match in HOME_PATH.finditer(line):
+        name = (match.group(1) or match.group(2) or "").lower()
+        if name not in HOME_PLACEHOLDERS and not name.startswith(("$", "%", "{", "<", "*")):
+            return True
+    return False
+
+
+class Owner:
+    """The owner's terms and allowed author e-mails, from the file `git config foreman.terms` names."""
+
+    def __init__(self, cwd):
+        self.terms, self.authors, self.pattern = [], set(), None
+        code, path = git(["config", "--get", "foreman.terms"], cwd)
+        if code != 0 or not path.strip():
+            return
+        try:
+            text = open(os.path.expanduser(path.strip()), encoding="utf-8").read()
+        except OSError:
+            sys.stderr.write("warning: foreman.terms names a file that cannot be read; owner terms not checked\n")
+            return
+        code, top = git(["rev-parse", "--show-toplevel"], cwd)
+        own = os.path.basename(top.strip()).lower() if code == 0 else ""
+        for raw in text.splitlines():
+            line = raw.strip() if raw.strip().startswith("#") else raw.split(" #", 1)[0].strip()
+            author = re.fullmatch(r"(?i)autor\s+<?([^<>\s]+)>?", line)
+            if author:
+                self.authors.add(author.group(1).lower())
+            elif line and not line.startswith("#") and line.lower() != own:
+                self.terms.append(line)
+        self.pattern = re.compile("|".join(r"(?<!\w)" + re.escape(term) + r"(?!\w)" for term in
+                                           sorted(self.terms, key=len, reverse=True)), re.I) if self.terms else None
+
+    def term_in(self, text):
+        return bool(self.pattern) and bool(self.pattern.search(text))
+
+    def allows(self, email):
+        return not self.authors or email.strip().lower() in self.authors
+
+
+def scan(diff, names, allowed=frozenset(), owner=None):
     findings = []
     env_files = sorted({n for n in names
                         if re.search(r"(^|/)\.env(\..+)?$", n)
@@ -305,17 +363,21 @@ def scan(diff, names, allowed=frozenset()):
         findings.append(".env-style file(s): " + ", ".join(f"{n} (fingerprint {fingerprint(n, '')})"
                                                            for n in env_files))
     seen = set()
-    for path, _, raw in diff_lines(diff):
+    for path, number, raw in diff_lines(diff):
         line = text_of(raw)
         labels = line_findings(line)
-        if not labels:
-            continue
         mark = fingerprint(path, line)
-        if mark in allowed or mark in seen:
+        if mark in allowed:
             continue
-        seen.add(mark)
-        where = f" in {path}" if path else " in added lines"
-        findings.append(f"possible {', '.join(labels)}{where} (fingerprint {mark})")
+        if labels and mark not in seen:
+            seen.add(mark)
+            where = f" in {path}" if path else " in added lines"
+            findings.append(f"possible {', '.join(labels)}{where} (fingerprint {mark})")
+        personal = (["absolute home path"] if home_path(line) else []) + (
+            ["owner term"] if owner and owner.term_in(line) else [])
+        if personal and ("personal", mark) not in seen:
+            seen.add(("personal", mark))
+            findings.append(f"{' and '.join(personal)} in {path or 'added lines'}:{number} (fingerprint {mark})")
     return findings
 
 
@@ -400,7 +462,13 @@ def pre_commit():
     cwd = os.getcwd()
     staged = names(git_checked(["diff", "--cached", "--name-only", "-z", "--diff-filter=d"], cwd))
     diff = git_checked(["diff", "--cached", "--no-ext-diff", "--no-textconv", "--text", "--"] + EXCLUDES, cwd)
-    findings = scan(diff, staged, load_allowlist(cwd))
+    owner = Owner(cwd)
+    findings = scan(diff, staged, load_allowlist(cwd), owner)
+    ident = git(["var", "GIT_AUTHOR_IDENT"], cwd)[1]
+    email = re.search(r"<([^>]*)>", ident)
+    if not owner.allows(email.group(1) if email else ""):
+        findings.append("the author e-mail of this commit is not one of the autor lines of the foreman.terms list: "
+                        "set this repository's user.email to one of them, or add it to the list")
     bad_encoding, hidden = text_problems(cwd)
     if findings:
         sys.stderr.write("Secret scan blocked this commit. The changes being committed contain:\n- "
@@ -433,7 +501,24 @@ def range_findings(rev_range, cwd):
                         "--format=", rev_range, "--"] + EXCLUDES, cwd)
     listing = git_checked(["log", "--name-only", "-z", "--diff-merges=separate", "--diff-filter=d", "--format=",
                            rev_range], cwd)
-    return scan(diff, names(listing), load_allowlist(cwd, "HEAD"))
+    owner, allowed = Owner(cwd), load_allowlist(cwd, "HEAD")
+    findings = scan(diff, names(listing), allowed, owner)
+    people = git_checked(["log", "--format=%h%x00%ae%x00%ce", rev_range], cwd).decode("utf-8", "replace")
+    for row in people.splitlines():
+        sha, author, committer = (row.split("\0") + ["", ""])[:3]
+        if not (owner.allows(author) and owner.allows(committer)):
+            findings.append(f"commit {sha}: the author or committer e-mail is not one of the autor lines of the "
+                            "foreman.terms list")
+    if owner.terms:
+        log = git_checked(["log", "--format=%x01%H%x00%B", rev_range], cwd).decode("utf-8", "replace")
+        for entry in log.split("\x01")[1:]:
+            sha, _, body = entry.partition("\0")
+            for number, line in enumerate(body.splitlines(), 1):
+                mark = fingerprint("commit:" + sha, line)
+                if owner.term_in(line) and mark not in allowed:
+                    findings.append(f"owner term in the message of commit {sha[:7]}, line {number} "
+                                    f"(fingerprint {mark})")
+    return findings
 
 
 def scan_range(rev_range):

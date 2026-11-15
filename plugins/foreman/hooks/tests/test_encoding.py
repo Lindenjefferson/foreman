@@ -3,6 +3,8 @@ import os, subprocess, sys, tempfile
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pre-commit-secret-scan.py")
 os.environ["CLAUDE_FOREMAN_HOME"] = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 repo = tempfile.mkdtemp(prefix="hookenc_")
+# a foreman.terms list of this machine must not reach the fixtures
+os.environ["GIT_CONFIG_GLOBAL"] = tempfile.mkstemp(prefix="hookenc_gitconfig_")[1]
 results = []
 
 
