@@ -9,7 +9,7 @@ For every operation that creates, changes or deletes data that another actor or 
 - **What it references** (a category, a person, an account): what if that item is hidden, inactive, removed or deleted? Editing must keep the record's current value even when it is no longer selectable.
 - **Two at once:** what if two people do it, or this and a conflicting operation, at the same time?
 - **Derived values:** the limit of every value it computes (sum, product, count, concatenation), not only of what is typed.
-- **Each failure:** what the user sees for each one (specific message, where, what stays typed).
+- **Each failure:** what the user sees for each one (specific message, where, what stays typed), and whether the operation, sent again after a failure or a restart, writes only once.
 - **Validate before writing:** what is already written if the next validation refuses? Validation and permission come before any write; what must happen together is one atomic operation.
 - **The past:** what it changes in history, balances, totals or reports already shown.
 

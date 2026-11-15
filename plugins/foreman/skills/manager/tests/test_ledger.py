@@ -800,6 +800,14 @@ check("a dev run with --from-agent is only measured from its transcript: the dev
 r = run("add", "--agent", "dev", "--task", "T9", "--verdict", "DONE", "--from-agent", "zzz999", ledger=REPORTS)
 check("a dev --from-agent with no transcript is refused, naming --seconds", r.returncode != 0
       and "--seconds" in r.stderr, r.stderr)
+shutil.copy(os.path.join(transcripts, "agent-a1b2c3.jsonl"), os.path.join(transcripts, "agent-j1k2l3.jsonl"))
+r = run("add", "--agent", "reviewer", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1",
+        "--report", REVIEW_REPORT, "--from-agent", "j1k2l3", ledger=REPORTS)
+check("--report with --from-agent keeps the manager's file as the run's report, still saves the agent's own and "
+      "measures the run from its transcript (a design review appended to qa's verdict)",
+      r.returncode == 0 and last_run(REPORTS).get("report") == REVIEW_REPORT and last_run(REPORTS).get("seconds") == 750
+      and open(os.path.join(repo, ".superpowers/reports/reports/reviewer-j1k2l3.md"),
+               encoding="utf-8").read().startswith("Verdict: FAIL"), (r.stderr, last_run(REPORTS)))
 del os.environ["CLAUDE_CONFIG_DIR"]
 add("dev", "DONE", "fix-1", ledger=REPORTS)
 check("a run without --report has no report key", "report" not in status(REPORTS)["runs"][0]
