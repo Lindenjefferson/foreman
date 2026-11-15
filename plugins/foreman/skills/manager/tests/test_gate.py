@@ -1040,7 +1040,7 @@ check("a path out of the repository in a file that is no test nor command leaves
       re.search(r"Standalone:\s+PASS", r.stdout), r.stdout)
 CLAUDE9 = open(os.path.join(repo, "CLAUDE.md"), encoding="utf-8").read()
 os.makedirs(os.path.join(repo, "tests"))
-commit("tests/t.txt", "carrega ../outro-repo/fixture.json\nsaída em ../_temp/p-worktrees/t\n", "test: fixture")
+commit("tests/t.txt", "carrega ../../outro-repo/fixture.json\nsaída em ../../_temp/p-worktrees/t\n", "test: fixture")
 commit("CLAUDE.md", CLAUDE9.replace("## Comandos\n\n", "## Comandos\n\n- Arquivos de teste: `tests/*.txt`\n"
                                     "- Build: `sh ../outro-repo/build.sh`\n"), "docs: tests and build")
 r = gate("--base", "main")
