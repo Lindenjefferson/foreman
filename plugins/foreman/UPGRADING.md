@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.9.0 — cada projeto se sustenta sozinho
+
+Da rodada da `anonimizar` num projeto do autor.
+
+- **A `anonimizar` tira as menções a outros projetos do dono** (melhoria, pedido do dono): o passo 3 trocava cada termo por um nome genérico, e um outro projeto do dono, citado 18 vezes, virou "o app de dados do carro", com uma seção inteira que só servia a ele e um caminho para dentro do repositório dele, que o leitor de fora não segue. Agora a menção sai e a frase é reescrita para se sustentar sozinha (o fato fica, a origem sai), o que só serve ao outro projeto sai com o sim do usuário, e o passo 5 enxuga tudo o que o projeto não precisa. O molde do `CLAUDE.md` ganha a regra em "Documentação": documento, plano e relatório não citam outros projetos do dono, e o que só serve a outro projeto mora lá. Número: menções a outros projetos do dono que sobram depois de uma rodada da `anonimizar` (meta 0).
+
+**Ao atualizar:** nada muda; o kickoff traz a linha nova do molde.
+
 ## 1.8.0 — a correção espera o `qa` que roda na mesma árvore
 
 Da noite autônoma da entrega obd-bluetooth de um projeto do autor.
