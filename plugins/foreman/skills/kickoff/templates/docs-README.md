@@ -15,6 +15,7 @@ Só estas, e a pasta própria do projeto que este índice nomear aqui: o `gate.p
 - `modulos/` — um documento por módulo (`NN-nome.md`), listado no índice acima.
 - [`arquitetura.md`](arquitetura.md) — os padrões que todo código segue e o mapa dos módulos; o `dev` lê antes de cada tarefa.
 - [`operacao.md`](operacao.md) — publicar, backup e restauração, reverter e onde ler os logs.
+- [`novidades.md`](novidades.md) — o que mudou em cada versão, uma linha por mudança visível a quem usa; o `manager` escreve no commit da versão, e o `gate.py` cobra a entrada de cada minor ou major.
 - [`discovery/`](discovery/) — achados estruturados das fontes brutas (gerados pelo agente `discovery`).
 - `specs/` — uma spec por entrega grande (`<slug>.md`), decidida antes de codar.
 - `plans/` — um plano por entrega (`<slug>.md`), o que o `manager` executa e o `gate.py` rastreia (e recusa em outro lugar).
@@ -40,7 +41,6 @@ Os três usam o **mesmo slug da entrega**, e cada pasta aparece na primeira entr
 
 ## Propósito
 ## Arquivos-chave
-## Classes / Funções principais
 ## Decisões de design
 ## Fluxo de dados
 ## Dependências

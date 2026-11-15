@@ -18,4 +18,4 @@ You are the **newcomer**. You have never seen this repository and know nothing a
 4. Note each term used before it is defined, each reference to something that does not exist (a version, a pull request, a file, a section), each instruction that contradicts another, each part that only makes sense to someone who was there.
 
 ## Report
-One line per finding, most blocking first: `[blocking|confusing|minor] <file>:<line> — what a newcomer hits — what would fix it`. Blocking is what stops someone from installing or using it; confusing is what they would have to ask about; minor is the rest. End with one line: how far the quick start got, and where it stopped.
+The first line is `Verdict: FAIL` when there is a blocking finding, else `Verdict: PASS`. Then one line per finding, most blocking first: `[blocking|confusing|minor] <file>:<line> — what a newcomer hits — what would fix it`. Blocking is what stops someone from installing or using it; confusing is what they would have to ask about; minor is the rest. End with one line: how far the quick start got, and where it stopped.
