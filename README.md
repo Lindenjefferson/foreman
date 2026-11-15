@@ -28,7 +28,7 @@ tamanho → (spec) → plano ✋ → ciclos: dev por tarefa (as independentes em
 1. O `manager` classifica o pedido (pequeno, padrão, grande); isso decide quantas etapas rodam. O pequeno (até três arquivos, mudança óbvia) vai direto a uma tarefa, sem plano escrito, e só para no ✋ 2.
 2. Nos pedidos grandes há uma spec; nos padrões e grandes, um plano revisado pelo `reviewer` que você aprova (✋ 1).
 3. Cada ciclo tem até ~6 tarefas: o `dev` implementa cada uma com o teste primeiro; o `reviewer` e o `qa` conferem o ciclo inteiro ao mesmo tempo; o `dev` corrige tudo numa rodada só.
-4. O `gate.py` confere localmente o ledger, os critérios de aceite com teste (e avisa quando o teste veio no mesmo commit do código), build, tipos, lint, testes (a suíte inteira no head final, rodada por ele ou por um `qa`), auditoria de dependências e segredos, e grava um relatório de qualidade com as métricas da entrega.
+4. O `gate.py` confere localmente o ledger, os critérios de aceite com teste (e avisa quando o teste veio no mesmo commit do código), build, tipos, lint, testes (a suíte inteira no head final, rodada por ele ou por um `qa`), auditoria de dependências, segredos e dados pessoais (os termos do dono, caminhos de home e autores dos commits), o README e a documentação no padrão, e grava um relatório de qualidade com as métricas da entrega.
 5. Você decide o merge e o push (✋ 2). Nada sai da máquina sem esse pedido.
 
 O passo a passo, com o que você digita e o que vê em cada etapa, está em [Como é uma entrega](docs/como-e-uma-entrega.md).
@@ -79,17 +79,17 @@ Noutro computador, num projeto que já usa o plugin: clone, instale o plugin e p
 
 | Componente | Função |
 |---|---|
-| [`kickoff`](plugins/foreman/skills/kickoff/SKILL.md) | Prepara um projeto novo ou existente: `CLAUDE.md`, `CLAUDE.local.md`, `docs/`, `.gitignore`, hook de segredos e permissões dos agentes. |
+| [`kickoff`](plugins/foreman/skills/kickoff/SKILL.md) | Prepara um projeto novo ou existente: `CLAUDE.md`, `CLAUDE.local.md`, `docs/`, `.gitignore`, hook de segredos, a lista de termos do dono (uma vez por máquina) e permissões dos agentes. |
 | [`manager`](plugins/foreman/skills/manager/SKILL.md) | Conduz a entrega do tamanho ao merge, em ciclos, com duas aprovações suas; o que vale só numa situação (modo autônomo, pausa, telas, paralelo, várias sessões) está em [`references/`](plugins/foreman/skills/manager/references/), lido quando ela ocorre. |
 | [`validar`](plugins/foreman/skills/validar/SKILL.md) | Percorre com você, item a item, as decisões tomadas em seu nome (lista VALIDAR) e grava cada resposta. |
 | [`atualizar`](plugins/foreman/skills/atualizar/SKILL.md) | Atualiza o plugin num projeto num ponto de parada da entrega e, na sessão nova, acrescenta as linhas novas dos templates e aplica as notas de cada versão pulada. |
 | [`feedback-plugin`](plugins/foreman/skills/feedback-plugin/SKILL.md) | No fim da entrega, escreve o pedido para a sessão do plugin, com métricas e lições candidatas a regra geral. |
-| [`anonimizar`](plugins/foreman/skills/anonimizar/SKILL.md) | Antes de publicar um projeto: tira os dados pessoais e as menções a outros projetos seus dos arquivos e do histórico, enxuga a documentação e pede ao `newcomer` a leitura de quem nunca o viu. |
+| [`anonimizar`](plugins/foreman/skills/anonimizar/SKILL.md) | Num projeto anterior à lista de termos do dono, antes de publicá-lo: tira os dados pessoais e as menções a outros projetos seus dos arquivos e do histórico, enxuga a documentação e pede ao `newcomer` a leitura de quem nunca o viu. |
 | [`discovery`](plugins/foreman/agents/discovery.md) | Extrai fatos das fontes brutas (planilhas, apps de referência, documentos) antes do design e prepara o debate da spec (o pré-respondido, opções e sugestão para o resto; stacks num projeto novo). |
 | [`dev`](plugins/foreman/agents/dev.md) | Implementa uma tarefa com o teste primeiro e atualiza a doc do módulo. |
 | [`reviewer`](plugins/foreman/agents/reviewer.md) | Revisa a spec, o plano e o diff de cada ciclo; só reporta o que consegue provar. |
 | [`qa`](plugins/foreman/agents/qa.md) | Roda a suíte e confere os critérios de aceite do ciclo, com a verificação de interface do projeto quando há tela. |
-| [`newcomer`](plugins/foreman/agents/newcomer.md) | Lê o repositório como um visitante novo, segue o começo rápido só pelo que está escrito e aponta o que ficou confuso, faltando ou quebrado. |
+| [`newcomer`](plugins/foreman/agents/newcomer.md) | No fechamento de uma versão minor ou major, e na `anonimizar`, lê o repositório como um visitante novo, segue o começo rápido só pelo que está escrito e aponta o que ficou confuso, faltando ou quebrado. |
 | [`ledger.py`](plugins/foreman/skills/manager/ledger.py) | Registro da entrega: o que cada agente concluiu, o que falta, itens adiados e métricas. |
 | [`gate.py`](plugins/foreman/skills/manager/gate.py) | Checagem final local, sem agente: READY ou NOT READY e o relatório de qualidade. |
 | [`general.md`](plugins/foreman/checklists/general.md) | Princípios gerais de qualidade que o `dev` e o `reviewer` aplicam; é o índice, e os checklists [`access-and-data.md`](plugins/foreman/checklists/access-and-data.md), [`auth-and-sessions.md`](plugins/foreman/checklists/auth-and-sessions.md) e [`web-and-ui.md`](plugins/foreman/checklists/web-and-ui.md) são lidos quando o produto tem o que eles tratam. |

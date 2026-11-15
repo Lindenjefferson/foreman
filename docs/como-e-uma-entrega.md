@@ -31,14 +31,14 @@ Você aprova ou pede mudança. Depois disso, a sessão só volta a parar para um
 Em cada ciclo:
 
 1. **`dev`**, um por tarefa (as que não mexem nos mesmos arquivos rodam em paralelo, cada uma na sua cópia do repositório): escreve o teste, confere que ele falha, implementa e atualiza a doc do módulo.
-2. **`reviewer` e `qa` ao mesmo tempo**, sobre o ciclo inteiro: o reviewer lê o diff e só reporta o que consegue provar, e o qa roda a suíte e confere cada critério de aceite, também na tela quando o produto tem uma.
+2. **`reviewer` e `qa` ao mesmo tempo**, sobre o ciclo inteiro: o reviewer lê o diff e só reporta o que consegue provar, e o qa roda os testes e a interface das telas que o ciclo tocou e confere cada critério de aceite; a suíte inteira roda no último ciclo e no head final.
 3. **Uma rodada de correção**: o `dev` corrige todos os achados de uma vez, e o que ele tocou é revisado e testado de novo.
 
 Enquanto isso, abaixo do prompt, até três linhas dizem em que ciclo a entrega está, quantas tarefas faltam, o que está rodando e o que espera por você. O `/andamento` abre o painel com o detalhe.
 
 ## 5. O gate e a sua segunda aprovação (✋ 2)
 
-O `gate.py` roda local, sem agente, e responde READY ou NOT READY. Ele confere que o ledger não tem nada pendente, que cada critério de aceite tem teste, o build, os tipos, o lint, a suíte inteira, a auditoria de dependências e a varredura de segredos no histórico da branch. Depois grava o relatório de qualidade em `docs/quality-reports/`, com as métricas da entrega.
+O `gate.py` roda local, sem agente, e responde READY ou NOT READY. Ele confere que o ledger não tem nada pendente, que cada critério de aceite tem teste, o build, os tipos, o lint, a suíte inteira, a auditoria de dependências, o README e a documentação no padrão e a varredura de segredos e de dados pessoais (termos do dono, caminhos de home, autor dos commits) no histórico da branch. Depois grava o relatório de qualidade em `docs/quality-reports/`, com as métricas da entrega.
 
 Com READY, você decide o merge e o push. Nada sai da máquina sem esse pedido.
 
