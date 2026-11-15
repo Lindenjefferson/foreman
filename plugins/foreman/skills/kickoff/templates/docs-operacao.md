@@ -6,7 +6,7 @@ Como o produto é publicado, guardado e recuperado. Quem executa é uma pessoa: 
 
 _(os comandos, a ordem, o que confere que a publicação deu certo, e o que cada canal (loja, provedor de login, hospedagem) exige antes da primeira publicação, cada exigência com a prova)_
 
-Antes de tornar o repositório público pela primeira vez, rode a skill `anonimizar` do Foreman: dado pessoal costuma sobreviver no histórico do git, não só nos arquivos atuais, e limpar só os arquivos não basta.
+Antes do primeiro push para qualquer remoto, público ou privado, rode a skill `anonimizar` do Foreman: dado pessoal costuma sobreviver no histórico do git, não só nos arquivos atuais, um repositório privado pode virar público com o histórico junto, e limpar só os arquivos não basta.
 
 ## Backup e restauração
 
