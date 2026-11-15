@@ -45,8 +45,9 @@ Personal data: added lines with an absolute home path (C:\\Users\\<name>\\, C:/U
 runner, you, yourname, name, me, example, public, default, or a name opening with $, %, {, < or *. The owner's terms
 live in one file outside any repository, which `git config --global foreman.terms` names: one term per line (names,
 e-mails, domains, other project names; # starts a comment) and lines `autor <e-mail>` listing the e-mails allowed
-as commit author. A term equal to the repository's folder name is ignored; any other, matched as a whole word in any
-case, blocks the added line. --pre-commit also refuses an author e-mail (git var GIT_AUTHOR_IDENT) outside the autor
+as commit author, and lines `familia <repo> <repo>...` naming the folders of one product (its app and its web, say):
+inside any of them, the names of the whole family are ignored. A term equal to the repository's folder name is ignored
+too; any other, matched as a whole word in any case, blocks the added line. --pre-commit also refuses an author e-mail (git var GIT_AUTHOR_IDENT) outside the autor
 lines, and --range flags each commit whose author or committer e-mail is outside them and each commit-message line
 with a term (fingerprint of "commit:<sha>" and the line); the autor checks apply only when the list has an autor line.
 No message prints the term, the path or the e-mail: file and line, or the commit, and the fingerprint, freed by the
@@ -337,12 +338,19 @@ class Owner:
             return
         code, top = git(["rev-parse", "--show-toplevel"], cwd)
         own = os.path.basename(top.strip()).lower() if code == 0 else ""
-        for raw in text.splitlines():
-            line = raw.strip() if raw.strip().startswith("#") else raw.split(" #", 1)[0].strip()
+        lines = [raw.strip() if raw.strip().startswith("#") else raw.split(" #", 1)[0].strip()
+                 for raw in text.splitlines()]
+        ignored = {own}
+        for line in lines:
+            family = re.fullmatch(r"(?i)familia\s+(.+)", line)
+            if family and own in family.group(1).lower().split():
+                ignored.update(family.group(1).lower().split())
+        for line in lines:
             author = re.fullmatch(r"(?i)autor\s+<?([^<>\s]+)>?", line)
             if author:
                 self.authors.add(author.group(1).lower())
-            elif line and not line.startswith("#") and line.lower() != own:
+            elif line and not line.startswith("#") and not re.match(r"(?i)familia\s", line) \
+                    and line.lower() not in ignored:
                 self.terms.append(line)
         self.pattern = re.compile("|".join(r"(?<!\w)" + re.escape(term) + r"(?!\w)" for term in
                                            sorted(self.terms, key=len, reverse=True)), re.I) if self.terms else None
