@@ -81,12 +81,25 @@ reset()
 with open(TERMS, "a", encoding="utf-8") as handle:
     handle.write("acme-web\n")
 code, err = staged("doc.md", "the app reads the acme-web API\n")
-check("a sibling project of no declared family still blocks", code == 1 and "doc.md:1" in err, err)
+check("a sibling project still blocks without a Depende de line in CLAUDE.md", code == 1 and "doc.md:1" in err, err)
 reset()
+write("CLAUDE.md", "# acme-app\n\nThe app reads acme-web.\n\n- Depende de (each external system): _(acme-web)_\n")
+code, err = staged("doc.md", "the app reads the acme-web API\n")
+check("a term elsewhere in CLAUDE.md, or in a placeholder of the Depende de line, still blocks",
+      code == 1 and "doc.md:1" in err, err)
+reset()
+write("CLAUDE.md", "# acme-app\n\n- Depende de (each external system): the ACME-WEB API, tag v2\n")
+code, err = staged("doc.md", "the app reads the acme-web API\n")
+check("a term the CLAUDE.md Depende de line declares is ignored in that repository, in any case", code == 0, err)
+reset()
+os.remove(os.path.join(repo, "CLAUDE.md"))
 with open(TERMS, "a", encoding="utf-8") as handle:
     handle.write("familia acme-web acme-app\n")
 code, err = staged("doc.md", "the app reads the acme-web API\n")
-check("the projects of a familia line are ignored inside each of them", code == 0, err)
+check("a familia line frees nothing: without the Depende de line the sibling still blocks",
+      code == 1 and "doc.md:1" in err, err)
+check("a familia line warns once to declare the dependency in CLAUDE.md",
+      err.count("familia") == 1 and "Depende de" in err, err)
 reset()
 code, err = staged("doc.md", "the familia line is no term: familia\n")
 check("a familia line is no term itself", code == 0, err)
@@ -117,6 +130,17 @@ check("--range flags an author or committer outside the autor lines", r.returnco
       r.stdout + r.stderr)
 check("--range flags a term in a commit message, without printing it",
       "message" in r.stdout and NAME.lower() not in r.stdout.lower(), r.stdout)
+write("doc2.md", "the app reads the acme-web API\n")
+sh("git", "add", "doc2.md")
+sh("git", "commit", "-q", "--no-verify", "-m", "docs: api")
+r = sh(sys.executable, HOOK, "--range", "main..HEAD", check=False)
+check("--range blocks an undeclared term in a file of the range", "doc2.md:1" in r.stdout, r.stdout)
+write("CLAUDE.md", "# acme-app\n\n- Depende de: acme-web, tag v2\n")
+sh("git", "add", "CLAUDE.md")
+sh("git", "commit", "-q", "--no-verify", "-m", "docs: declare the dependency")
+r = sh(sys.executable, HOOK, "--range", "main..HEAD", check=False)
+check("--range reads the Depende de line of CLAUDE.md at HEAD", "doc2.md" not in r.stdout
+      and "CLAUDE.md" not in r.stdout, r.stdout)
 with open(TERMS, "w", encoding="utf-8") as handle:
     handle.write(f"{NAME}\n")
 r = sh(sys.executable, HOOK, "--range", "main..HEAD", check=False)
