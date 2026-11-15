@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.10.1 — projetos do mesmo produto se citam
+
+Da lista de termos da 1.10.0, montada para os projetos do autor.
+
+- **Projetos do mesmo produto barrados um pelo outro** (defeito, pedido do dono): a lista `foreman.terms` só ignorava o termo igual ao nome da própria pasta, e o app de um produto cita o web dele dezenas de vezes (83 num projeto do autor), porque é a dependência e o nome do produto. Com o nome do web na lista, todo commit do app que o citasse seria barrado; sem ele, nenhum outro projeto era barrado ao citá-lo. A regra não tinha como ser seguida. Agora uma linha `familia <pasta> <pasta>...` junta as pastas de um produto: dentro de qualquer uma delas, os nomes da família são ignorados, e fora delas continuam barrados. Número: termos tirados da lista porque barravam um projeto do mesmo produto (meta 0).
+
+**Ao atualizar:** nada muda; quem tem projetos do mesmo produto acrescenta a linha `familia` à lista.
+
 ## 1.10.0 — de projeto de casa a entrega para cliente
 
 Os projetos começaram como projetos de casa; o foreman passa a trabalhar como numa entrega para cliente: cada entrega já sai anônima, limpa, com README e documentação no padrão e sem depender de outro repositório, em vez de uma limpeza no fim. Da auditoria de quatro projetos do autor, todos "razoáveis": a limpeza tardia custou reescrita de histórico, force push e várias rodadas de documentação.
