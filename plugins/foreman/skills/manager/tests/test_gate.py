@@ -1036,6 +1036,33 @@ check("the gate warns on a relative path that leaves the repository, naming file
 check("the worktree folder of the plugin is no path that leaves the repository",
       "leaves the repository" in r.stdout and "notas.md" not in r.stdout, r.stdout)
 check("the warning does not change the Docs verdict", docs_of(r.stdout)[0] != "FAIL", r.stdout)
+check("a path out of the repository in a file that is no test nor command leaves Standalone passing",
+      re.search(r"Standalone:\s+PASS", r.stdout), r.stdout)
+CLAUDE9 = open(os.path.join(repo, "CLAUDE.md"), encoding="utf-8").read()
+os.makedirs(os.path.join(repo, "tests"))
+commit("tests/t.txt", "carrega ../../outro-repo/fixture.json\nsaída em ../../_temp/p-worktrees/t\n", "test: fixture")
+commit("CLAUDE.md", CLAUDE9.replace("## Comandos\n\n", "## Comandos\n\n- Arquivos de teste: `tests/*.txt`\n"
+                                    "- Build: `sh ../outro-repo/build.sh`\n"), "docs: tests and build")
+r = gate("--base", "main")
+standalone = re.search(r"Standalone:\s+(\w+)((?:\n    .*)*)", r.stdout)
+check("Standalone FAILs on a path out of the repository in a declared test file, naming file and line",
+      standalone and standalone.group(1) == "FAIL" and "tests/t.txt:1" in standalone.group(2)
+      and "tests/t.txt:2" not in standalone.group(2), r.stdout)
+check("Standalone FAILs on a path out of the repository in a Comandos command, naming the command line",
+      standalone and "Build" in standalone.group(2), r.stdout)
+check("outside tests and commands the path out stays a warning", standalone and "guia/fora.md" not in
+      standalone.group(2) and "guia/fora.md:1" in r.stdout, r.stdout)
+commit("CLAUDE.md", CLAUDE9 + "\n## Dependências\n\n- Depende de: acme-web, tag v2\n", "docs: dependency")
+r = gate("--base", "main")
+check("Standalone passes once tests and commands stay inside the repository", re.search(r"Standalone:\s+PASS", r.stdout),
+      r.stdout)
+check("a Depende de line changed against the base is a warning naming the line",
+      "warning: the Depende de line of CLAUDE.md changed" in r.stdout and "acme-web, tag v2" in r.stdout, r.stdout)
+commit("CLAUDE.md", CLAUDE9, "docs: back")
+sh("git", "rm", "-q", "tests/t.txt")
+sh("git", "commit", "-q", "--no-verify", "-m", "test: out")
+r = gate("--base", "main")
+check("an unchanged Depende de line prints no warning", "Depende de" not in r.stdout, r.stdout)
 ledger_cmd("start", "--slug", "n", "--base", "main")
 for agent in ("dev", "reviewer", "qa"):
     ledger_cmd("add", "--agent", agent, "--verdict", "DONE" if agent == "dev" else "PASS",

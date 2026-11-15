@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.11.0 — dependência declarada no lugar da família
+
+Da lista de termos da 1.10.0 e da linha `familia` da 1.10.1.
+
+- **Dependência declarada no repositório** (melhoria, decisão do dono): depender de outro projeto é legítimo e pode ser citado; citar o que não faz sentido para o projeto, não. A regra barrava pelo nome os projetos do dono, com a exceção `familia` morando no arquivo privado de termos, invisível para quem clona: o leitor não via de que o projeto dependia. Os defeitos reais eram um teste que lia `../<repositório vizinho>`, uma seção que só servia a outro projeto e caminhos para dentro de outro repositório; o nome era o sintoma, e foram duas exceções em duas versões (a ferramenta de desenvolvimento e a família). Agora o molde do `CLAUDE.md` ganha em "Comandos" a linha "Depende de" (cada sistema externo, o que se usa dele e a versão ou o contrato), que o kickoff preenche pelos arquivos do projeto; o scanner ignora, naquele repositório, o termo da lista que aparece nessa linha (a do `CLAUDE.md` da árvore no `--pre-commit` e a do HEAD no `--range`), e a linha `familia` deixa de liberar e vira um aviso; o gate avisa quando a linha muda contra a base, para declarar tudo não virar brecha silenciosa, e a nova checagem Standalone barra o `../` que sai do repositório nos arquivos de teste declarados e nos comandos de "Comandos" (`../_temp/`, a pasta das worktrees do plugin, continua de fora), que segue como aviso no resto; a `anonimizar` mantém a dependência declarada e tira a menção não declarada. Número: entradas de nomes de projeto no `.foreman-secrets-allow`; gates NOT READY por um termo de projeto; menções achadas pela `anonimizar` continuam 0 (se subirem em duas entregas, a regra do nome volta).
+
+**Ao atualizar:** acrescente a linha "Depende de" ao `CLAUDE.md` de cada projeto (o kickoff a acrescenta como as outras linhas do molde) e passe cada linha `familia` do `~/.foreman-terms` para o "Depende de" dos projetos dela; nesta versão a linha `familia` ainda é reconhecida, sem efeito e com um aviso; na seguinte, o reconhecimento e o aviso saem. Um `../` que sai do repositório num arquivo de teste declarado ou num comando de "Comandos" passa a reprovar o gate.
+
 ## 1.10.1 — projetos do mesmo produto se citam
 
 Da lista de termos da 1.10.0, montada para os projetos do autor.

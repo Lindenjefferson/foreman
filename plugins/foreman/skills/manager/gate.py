@@ -56,8 +56,12 @@ also warns when a criterion's test arrived in the same commit as code, naming th
 written first has a commit of its own. Test material is not code arriving (the declared test files and anything
 under a folder they name, the plan, the lessons, the allowlist, the quality reports, and a rename with no content).
 The warning does not change the verdict, and no warning does not prove the order: code written first and committed
-after its test leaves the same history. It also warns on each tracked text file:line whose relative path (../), resolved from
-the file, leaves the repository root, ../_temp/ (the plugin's worktree folder) aside. When the "Comandos" section differs
+after its test leaves the same history. A relative path (../) that, resolved from its file, leaves the repository
+root (../_temp/, the plugin's worktree folder, aside; there is no allowlist for it) FAILs Standalone in a file of the
+"Arquivos de teste" globs and in a "Comandos" command, since a clone alone cannot run them, and is a warning naming
+file:line in any other tracked text file. When the "Depende de" line of CLAUDE.md (read as the scanner reads it, which
+frees the owner's terms it names) differs from the one at <base>, the gate warns with both values, so declaring
+everything is no silent loophole. When the "Comandos" section differs
 from the one at <base>, the gate prints the difference as a warning (and the report shows it) and still runs the
 branch's commands. A "Comandos" line labeled Testes, Tests or Test plus other words (not "Testes afetados") is no
 gate command: it is a warning (and the report lists it) to name it "Testes (<name>)". Prints READY or NOT READY and
@@ -263,11 +267,26 @@ def run_command(command, shell, seconds):
         return code == 0, "\n".join(output[-15:])
 
 
-def secret_findings(base):
+def scanner():
     spec = importlib.util.spec_from_file_location("secretscan", SCANNER)
-    scanner = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(scanner)
-    return scanner.range_findings(f"{base}..HEAD", os.getcwd())
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def secret_findings(base):
+    return scanner().range_findings(f"{base}..HEAD", os.getcwd())
+
+
+def depends_change(base):
+    """Warns when the "Depende de" line of CLAUDE.md differs from the one at <base>: a term declared there is no
+    longer refused by the owner's list, so declaring everything would be a silent way around it."""
+    code, old = git("show", f"{base}:CLAUDE.md")
+    read = scanner().depends_line
+    before, after = read(old if code == 0 else ""), read(claude_md())
+    if before != after:
+        warn(f'the Depende de line of CLAUDE.md changed in {base[:7]}..HEAD, and the owner\'s terms it names are no '
+             f'longer refused here: "{before or "none"}" -> "{after or "none"}"')
 
 
 def glob_regex(pattern):
@@ -385,9 +404,38 @@ def copied_lines():
     return list(dict.fromkeys(problems))
 
 
-def outside_paths():
-    """Warns on each tracked text file whose relative path, resolved from the file, leaves the repository root: a
-    clone alone does not have what it points to."""
+def leaves(line, path):
+    return any(match.group(1).count("..") > path.count("/") and match.group(2) != WORKTREES
+               for match in OUTSIDE.finditer(line))
+
+
+def command_lines():
+    """{line number of CLAUDE.md: label} of the "Comandos" lines whose command, run from the root, leaves it."""
+    text = claude_md()
+    section = re.search(r"(?ms)^##\s+Comandos\s*$(.*?)(?=^##\s|\Z)", text)
+    if not section:
+        return {}
+    first = text[:section.start(1)].count("\n") + 1
+    found = {}
+    for offset, line in enumerate(section.group(1).split("\n")):
+        command = re.match(r"\s*[-*]\s*([^:\n]+):\s*`([^`]+)`", line)
+        if command and leaves(command.group(2), ""):
+            found[first + offset] = command.group(1).strip()
+    return found
+
+
+def standalone():
+    """A relative path that, resolved from its file, leaves the repository root: a clone alone lacks what it points
+    to. FAIL in a declared test file and in a "Comandos" command; a warning in any other tracked text file."""
+    globs = next((value.split() for label, value in comandos() if label_key(label) == TEST_FILES), [])
+    tests = []
+    for pattern in globs:
+        try:
+            tests.append(glob_regex(pattern))
+        except re.error:
+            pass
+    commands = command_lines()
+    blocking = [f"CLAUDE.md:{number} ({label})" for number, label in sorted(commands.items())]
     found = []
     for path in tracked_files():
         if path.endswith(".lock") or not os.path.isfile(path) or os.path.getsize(path) > 1_000_000:
@@ -396,13 +444,15 @@ def outside_paths():
             data = handle.read()
         if b"\0" in data[:8192]:
             continue
+        test = any(regex.match(path) for regex in tests)
         for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
-            if any(match.group(1).count("..") > path.count("/") and match.group(2) != WORKTREES
-                   for match in OUTSIDE.finditer(line)):
-                found.append(f"{path}:{number}")
+            if leaves(line, path) and not (path == "CLAUDE.md" and number in commands):
+                (blocking if test else found).append(f"{path}:{number}")
     if found:
         warn("a relative path leaves the repository, so a clone alone lacks what it points to (a sibling repository, "
              "a file of this machine): " + ", ".join(found))
+    return not blocking, ("a test or a command reaches out of the repository, so a clone alone cannot run it: "
+                          + ", ".join(blocking)) if blocking else ""
 
 
 def docs(old=None):
@@ -894,7 +944,8 @@ def main():
     ok, detail, number, old = version(base)
     checks.append(("Docs", *docs(old)))
     checks.append(("Version", ok, detail))
-    outside_paths()
+    checks.append(("Standalone", *standalone()))
+    depends_change(base)
 
     commands = project_commands(args.cmd)
     if ledger:
