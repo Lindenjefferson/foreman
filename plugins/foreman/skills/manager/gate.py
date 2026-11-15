@@ -14,10 +14,16 @@ for a task id with a hyphen, those holding the segments it splits into, with one
 Checks, in order: nothing is pending in the ledger (the current cycle is closed, every deferred item has a final
 decision, a delivery marked sensitive had its security scan and no copy of an integrated task is left over); the tree is clean; the documentation the kickoff prepared stays whole (with a docs/README.md: docs/arquitetura.md, the patterns every task follows, exists and, once a module doc docs/modulos/NN-*.md is tracked, it and the root README hold no _(...)_ placeholder; the index names every tracked module doc; every entry of docs/ is in the map (README.md, arquitetura.md, operacao.md
 or operacao/, lessons.md, modulos/ with module docs only, discovery/, specs/, plans/, mockups/, quality-reports/, or a
-folder or file the index names); and no relative link of README.md, docs/README.md or docs/arquitetura.md points to a missing file); the files of the
+folder or file the index or the root README names); no relative link of README.md, docs/README.md or docs/arquitetura.md points to a missing file;
+the root README has every ## section of the kickoff's templates/README.md, read from it and matched by text in any case,
+names no version the Versão files held at <base> and, when the Verificação de interface line has a command, shows an
+image (![...](path)) of a tracked file; no **Status** line of a module doc holds a task id (T3, fix-2, AC-), a date or
+over 200 characters; and no line of 60+ characters, headings, fences and table rules aside, appears in two of
+README.md, CLAUDE.md and the operation docs, docs/operacao.md and docs/operacao/); the files of the
 "Versão" line of "Comandos" (space-separated) hold one version x.y.z (after a version, versionName or __version__ key,
 quoted, bare or an XML element, or alone in the file; a pre-release fails) above the one they held at <base> (none there passes; a delivery that changed only documentation
-must raise it too; with no line, a project with docs/README.md fails and any other skips), named on the GATE line and in the report header; every acceptance-criterion id of the plan recorded in the ledger (tokens like AC-T3-2)
+must raise it too; in a project with docs/README.md, a minor or major needs its entry, the version written in
+docs/novidades.md; with no line, a project with docs/README.md fails and any other skips), named on the GATE line and in the report header; every acceptance-criterion id of the plan recorded in the ledger (tokens like AC-T3-2)
 appears in a tracked test file, as written or, for a test named by an identifier, in any case with _ for - and .
 (ac_t3_2, test_AC_T3_2; a longer id such as AC-T3-21, AC-T3-2.1 or ac_t3_2_1 is another id); the plan names no path inside .superpowers/, the agent workspace the kickoff
 ignores, since no clone would have it (the globs on the
@@ -28,14 +34,18 @@ ledger's latest reviewer run changes anything but the plan, docs/lessons.md, doc
 .foreman-secrets-allow (first-parent commits only, so a merged front is not counted, and tasks are integrated by
 fast-forward or cherry-pick); when "Comandos" has a "Verificação de interface" line and no command the gate runs
 is that line's command, a qa run added with --full whose head differs from HEAD in no file but those
-same exempt files and docs/ (Full suite, by tree, so a merged front counts; the gate runs the Testes line itself); every command of that section passes (lines like
+same exempt files and docs/ (Full suite, by tree, so a merged front counts; the gate runs the Testes line itself); a
+newcomer run in the ledger's current cycle, when the version rises minor or major (or is the first) or <base>..HEAD
+changes README.md or the "Preparar uma máquina" section of CLAUDE.md, and a dev run after it when it FAILed
+(Newcomer); every command of that section passes (lines like
 "- Testes: `<command>`"; Build, Typecheck, Lint, Testes and the optional Auditoria are run, a second line of the same
 kind runs too under its own label, such as "Testes (e2e)", a blank command counts as not configured, and --cmd adds
 or overrides one, or with no command removes it), each in a POSIX shell, as the Bash tool runs them (Git Bash on
 Windows, and cmd.exe with a warning only when there is none; bash, else sh, elsewhere) and within the minutes of the
 "Tempo máximo" line of that section (15 by default; a value that is no number of minutes up to a day is a warning;
 past the limit the command and, outside Windows, the processes it started are stopped); the commands changed no
-tracked file; and no secret or .env file is added anywhere in <base>..HEAD, the whole history that a push would send.
+tracked file; and no secret, .env file, owner term or home path is added anywhere in <base>..HEAD, the whole history
+that a push would send, nor a commit author or message there the owner's terms list refuses (the scanner's --range).
 The "Ambiente dos comandos" line of CLAUDE.local.md (the machine's own file; a _(...)_ placeholder is none) runs
 before every command, joined with &&, as a PATH to a tool this machine needs. Each run is recorded in the ledger
 (ledger.py gate, with the checks that failed), and the quality report counts the runs and why each was NOT READY.
@@ -46,7 +56,8 @@ also warns when a criterion's test arrived in the same commit as code, naming th
 written first has a commit of its own. Test material is not code arriving (the declared test files and anything
 under a folder they name, the plan, the lessons, the allowlist, the quality reports, and a rename with no content).
 The warning does not change the verdict, and no warning does not prove the order: code written first and committed
-after its test leaves the same history. When the "Comandos" section differs
+after its test leaves the same history. It also warns on each tracked text file:line whose relative path (../), resolved from
+the file, leaves the repository root, ../_temp/ (the plugin's worktree folder) aside. When the "Comandos" section differs
 from the one at <base>, the gate prints the difference as a warning (and the report shows it) and still runs the
 branch's commands. A "Comandos" line labeled Testes, Tests or Test plus other words (not "Testes afetados") is no
 gate command: it is a warning (and the report lists it) to name it "Testes (<name>)". Prints READY or NOT READY and
@@ -95,9 +106,22 @@ REPORTS = "docs/quality-reports"
 PATTERNS = "docs/arquitetura.md"
 MODULE_NAME = re.compile(r"\d{1,3}-[^/]+\.md")
 MODULE_DOC = re.compile(r"docs/modulos/" + MODULE_NAME.pattern)
-# What docs/ holds, beside a folder or file the index names: the kickoff's templates and the delivery's slug folders.
+# What docs/ holds, beside a folder or file the index or the root README names: the kickoff's templates and the
+# delivery's slug folders.
 DOCS_MAP = {"README.md", "arquitetura.md", "operacao.md", "operacao", "lessons.md", "modulos", "discovery", "specs",
-            "plans", "mockups", "quality-reports"}
+            "plans", "mockups", "quality-reports", "novidades.md"}
+NOVIDADES = "docs/novidades.md"
+TEMPLATE_README = os.path.join(HERE, "..", "kickoff", "templates", "README.md")
+HEADING = re.compile(r"(?m)^##[ \t]+(.+?)[ \t#]*$")
+IMAGE = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)")
+STATUS_LINE = re.compile(r"(?m)^\*\*Status\*\*.*$")
+STATUS_TASK = re.compile(r"(?<![\w-])(?:T\d+(?!\w)|[Ff]ix-\d+|AC-)")
+STATUS_DATE = re.compile(r"(?<!\d)(?:\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2})(?!\d)")
+STATUS_MAX = 200
+COPIED_MIN = 60
+# A relative path climbing out of the folders above it; ../_temp/ is the plugin's worktree folder beside the repository.
+OUTSIDE = re.compile(r"(?<![\w.])((?:\.\.[\\/])+)([\w.-]+)")
+WORKTREES = "_temp"
 LINK = re.compile(r"\]\(((?:[^()\s]|\([^()\s]*\))+)\)")
 LESSONS = "docs/lessons.md"
 SECRETS_ALLOW = ".foreman-secrets-allow"
@@ -135,9 +159,13 @@ def default_base():
     return None
 
 
-def comandos_section(text):
-    section = re.search(r"(?ms)^##\s+Comandos\s*$(.*?)(?=^##\s|\Z)", text)
+def section_of(text, title):
+    section = re.search(r"(?ms)^##\s+" + re.escape(title) + r"\s*$(.*?)(?=^##\s|\Z)", text)
     return section.group(1) if section else ""
+
+
+def comandos_section(text):
+    return section_of(text, "Comandos")
 
 
 def claude_md():
@@ -287,18 +315,110 @@ def artifacts(plan, slug=None):
     return True, ""
 
 
-def docs():
-    """The documentation the kickoff prepared stays whole: the patterns file, every module doc in the index, and no
-    dead relative link in the root README, the index or the patterns."""
+def tracked_files():
+    return [path for path in git("-c", "core.quotePath=false", "ls-files", "-z")[1].split("\0") if path]
+
+
+def interface_command():
+    return any(label_key(label) in INTERFACE and value for label, value in comandos())
+
+
+def readme_problems(old):
+    """The root README follows the kickoff's template: its sections (read from the template), no version number the
+    base held, and, for a product with screens, an image of a tracked file."""
+    if not os.path.isfile("README.md"):
+        return ["no README.md at the root: the kickoff's template"]
+    text = open("README.md", encoding="utf-8").read()
+    try:
+        template = open(TEMPLATE_README, encoding="utf-8").read()
+    except OSError:
+        template = ""
+    have = {title.strip().lower() for title in HEADING.findall(text)}
+    missing = [title for title in HEADING.findall(template) if title.strip().lower() not in have]
+    problems = ["README.md lacks the section(s) of the kickoff's README template: "
+                + ", ".join("## " + title for title in missing)] if missing else []
+    if old and re.search(r"(?<![\w.])v?" + re.escape(old) + r"(?![\w-]|\.\d)", text):
+        problems.append(f"README.md still names the version {old} the base held: it says what the product does, "
+                        "with no version number")
+    if interface_command():
+        images = [path.split("#")[0] for path in IMAGE.findall(text) if ":" not in path]
+        tracked = set(tracked_files())
+        if not images:
+            problems.append("README.md shows no image of the product, which has screens: a capture or GIF tracked in "
+                            "docs/, as ![The main screen](docs/screen.png)")
+        elif not any(os.path.normpath(path).replace("\\", "/") in tracked for path in images):
+            problems.append("the README.md image is no file of the repository: " + ", ".join(images))
+    return problems
+
+
+def status_problems(modules):
+    problems = []
+    for path in modules:
+        for line in STATUS_LINE.findall(open(path, encoding="utf-8").read()):
+            why = [label for label, bad in (("a task id", STATUS_TASK.search(line)),
+                                            ("a date", STATUS_DATE.search(line)),
+                                            (f"over {STATUS_MAX} characters", len(line) > STATUS_MAX)) if bad]
+            if why:
+                problems.append(f"the Status line of {path} holds {' and '.join(why)}: one sentence of what exists "
+                                "today; the history stays in git and the plans")
+    return problems
+
+
+def copied_lines():
+    """Each long line that README.md, CLAUDE.md and the operation docs hold in two of them: one source, one link."""
+    groups = {"README.md": ["README.md"], "CLAUDE.md": ["CLAUDE.md"],
+              "operacao": ["docs/operacao.md"] + sorted(path for path in tracked_files()
+                                                        if path.startswith("docs/operacao/") and path.endswith(".md"))}
+    seen, problems = {}, []
+    for group, files in groups.items():
+        for path in files:
+            if not os.path.isfile(path):
+                continue
+            for number, raw in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
+                line = raw.strip()
+                if len(line) < COPIED_MIN or line.startswith(("#", "```")) or re.fullmatch(r"[|:\s-]+", line):
+                    continue
+                first = seen.setdefault(line, (group, f"{path}:{number}"))
+                if first[0] != group:
+                    problems.append(f"the same line in {first[1]} and {path}:{number}: keep it in one of them and "
+                                    "link to it")
+    return list(dict.fromkeys(problems))
+
+
+def outside_paths():
+    """Warns on each tracked text file whose relative path, resolved from the file, leaves the repository root: a
+    clone alone does not have what it points to."""
+    found = []
+    for path in tracked_files():
+        if path.endswith(".lock") or not os.path.isfile(path) or os.path.getsize(path) > 1_000_000:
+            continue
+        with open(path, "rb") as handle:
+            data = handle.read()
+        if b"\0" in data[:8192]:
+            continue
+        for number, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+            if any(match.group(1).count("..") > path.count("/") and match.group(2) != WORKTREES
+                   for match in OUTSIDE.finditer(line)):
+                found.append(f"{path}:{number}")
+    if found:
+        warn("a relative path leaves the repository, so a clone alone lacks what it points to (a sibling repository, "
+             "a file of this machine): " + ", ".join(found))
+
+
+def docs(old=None):
+    """The documentation the kickoff prepared stays whole: the patterns file, every module doc in the index, no dead
+    relative link in the root README, the index or the patterns, the root README in the template's pattern, module
+    Status lines with no history and no line copied between the README, CLAUDE.md and the operation docs."""
     if not os.path.isfile("docs/README.md"):
         return True, "no docs/README.md: the kickoff prepares it"
     problems = []
     tracked = [path for path in git("-c", "core.quotePath=false", "ls-files", "-z", "docs")[1].split("\0") if path]
     modules = [path for path in tracked if MODULE_DOC.fullmatch(path)]
     index = open("docs/README.md", encoding="utf-8").read()
+    named = index + (open("README.md", encoding="utf-8").read() if os.path.isfile("README.md") else "")
     for top in sorted({path.split("/")[1] for path in tracked if path.count("/") >= 1}):
         if MODULE_NAME.fullmatch(top) or top not in DOCS_MAP and not re.search(
-                r"(?<![\w-])" + re.escape(top) + r"(?![\w-])", index):
+                r"(?<![\w-])" + re.escape(top) + r"(?![\w-])", named):
             where = "a module doc goes in docs/modulos/" if MODULE_NAME.fullmatch(top) else (
                 "move it to its place in the map, or name it in the index")
             problems.append(f"docs/{top} is outside the map of docs/README.md: {where}")
@@ -319,6 +439,7 @@ def docs():
             path = target.split("#")[0]
             if path and ":" not in path and not os.path.exists(os.path.join(os.path.dirname(page), path)):
                 problems.append(f"dead link: {page} -> {path}")
+    problems += readme_problems(old) + status_problems(modules) + copied_lines()
     return not problems, "\n".join(problems)
 
 
@@ -333,31 +454,58 @@ def semver(value):
 
 
 def version(base):
-    """The files of the "Versão" line hold one version, above the one they held at the base; returns it too."""
+    """The files of the "Versão" line hold one version, above the one they held at the base, and a minor or major has
+    its entry in docs/novidades.md in a kickoff project; returns the version and the base's too."""
     files = next((value.split() for label, value in comandos() if label_key(label) in VERSION_LABELS), None)
     if files is None:
         if os.path.isfile("docs/README.md"):
             return False, ('no "Versão" line in CLAUDE.md (Comandos): name the file or files that hold the product\'s '
-                           "version (the kickoff's template)"), None
-        return True, "no Versão line in CLAUDE.md (Comandos)", None
+                           "version (the kickoff's template)"), None, None
+        return True, "no Versão line in CLAUDE.md (Comandos)", None, None
     found = {path: version_in(open(path, encoding="utf-8", errors="replace").read() if os.path.isfile(path) else None)
              for path in files}
     early = [path for path, value in found.items() if value == "pre-release"]
     if early:
-        return False, "a pre-release is no delivered version (x.y.z with no suffix): " + ", ".join(early), None
+        return False, "a pre-release is no delivered version (x.y.z with no suffix): " + ", ".join(early), None, None
     missing = [path for path, value in found.items() if not value]
     if missing:
         return False, ("no version (x.y.z after a version, versionName or __version__ key, or a file holding only "
-                       "it) in: " + ", ".join(missing)), None
+                       "it) in: " + ", ".join(missing)), None, None
     if len(set(found.values())) > 1:
-        return False, "the version files disagree: " + ", ".join(f"{path} {value}" for path, value in found.items()), None
+        disagree = ", ".join(f"{path} {value}" for path, value in found.items())
+        return False, "the version files disagree: " + disagree, None, None
     now = found[files[0]]
     before = [version_in(out) for code, out in (git("show", f"{base}:{path}") for path in files) if code == 0]
     old = max((value for value in before if value), key=semver, default=None)
     if old and semver(now) <= semver(old):
         return False, (f"the version is {now}, not above the base's {old}: the manager raises it before the gate "
-                       "(manager step 6)"), now
-    return True, "", now
+                       "(manager step 6)"), now, old
+    notes = open(NOVIDADES, encoding="utf-8").read() if os.path.isfile(NOVIDADES) else ""
+    if old and os.path.isfile("docs/README.md") and semver(now)[:2] != semver(old)[:2] and not re.search(
+            r"(?<![\w.])v?" + re.escape(now) + r"(?![\w-]|\.\d)", notes):
+        return False, (f"{NOVIDADES} has no entry for {now}: a minor or major says, one line per change, what the "
+                       "people who use it see (manager step 6)"), now, old
+    return True, "", now, old
+
+
+def newcomer(ledger, base, now, old):
+    """A minor or major, or a change to README.md or to the "Preparar uma máquina" section, has a newcomer reading,
+    and its FAIL a dev run after it (the final fix-N)."""
+    code, before = git("show", f"{base}:CLAUDE.md")
+    machine = section_of(before if code == 0 else "", "Preparar uma máquina") != section_of(claude_md(),
+                                                                                            "Preparar uma máquina")
+    rises = bool(now) and (not old or semver(now)[:2] != semver(old)[:2])
+    readme = "README.md" in git("diff", "--name-only", base, "HEAD")[1].split()
+    if not (rises or readme or machine):
+        return True, "no minor or major, and README.md and Preparar uma máquina unchanged"
+    runs = ledger.get("runs") or []
+    read = [index for index, entry in enumerate(runs) if entry.get("agent") == "newcomer"]
+    if not read:
+        return False, ("the delivery is a minor or major, or changes README.md or Preparar uma máquina, and no "
+                       "newcomer read the repository: dispatch the newcomer and add it (manager step 5)")
+    if runs[read[-1]]["verdict"] == "FAIL" and not any(entry.get("agent") == "dev" for entry in runs[read[-1] + 1:]):
+        return False, "the newcomer's blocking findings go to the dev as the final fix-N"
+    return True, ""
 
 
 def repo_path(path):
@@ -743,9 +891,10 @@ def main():
         drop_report(report_path(args.report), git("cat-file", "-e", f"HEAD:{report_path(args.report)}")[0] == 0)
     dirty = git("status", "--porcelain")[1].strip()
     checks.append(("Clean tree", not dirty, dirty))
-    checks.append(("Docs", *docs()))
-    ok, detail, number = version(base)
+    ok, detail, number, old = version(base)
+    checks.append(("Docs", *docs(old)))
     checks.append(("Version", ok, detail))
+    outside_paths()
 
     commands = project_commands(args.cmd)
     if ledger:
@@ -753,6 +902,7 @@ def main():
         checks.append(("Artifacts", *artifacts(ledger.get("plan"), ledger.get("slug"))))
         checks.append(("Reviewed", *reviewed(ledger)))
         checks.append(("Full suite", *full_suite(ledger, commands)))
+        checks.append(("Newcomer", *newcomer(ledger, base, number, old)))
 
     changed = comandos_change(base)
     if changed:
