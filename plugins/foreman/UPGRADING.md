@@ -4,6 +4,18 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.8.0 — a correção espera o `qa` que roda na mesma árvore
+
+Da noite autônoma da entrega obd-bluetooth de um projeto do autor.
+
+- **Correção despachada com o `qa` ainda rodando** (defeito): o passo 4.3 mandava despachar o `fix-N` assim que o `reviewer` ou o `qa` desse FAIL, sem esperar o outro; num projeto sem worktree por cópia, o `dev` commitaria por baixo do build e do emulador do `qa`, contra a premissa "nenhum agente parado", que exclui o recurso que não se isola. Agora a correção espera o relatório do `qa` que verifica na árvore em que ela commitaria. Número: `fix-N` commitado com um `qa` em voo na mesma árvore (meta 0).
+- **Revisão de design registrada sem reescrever o relatório do `qa`** (defeito): o `references/screens.md` mandava anexar os achados ao relatório do `qa` antes do `add`, mas o arquivo só nascia no `add --from-agent`, com o `Verdict:` do agente, e o `ledger.py` recusava `--report` junto de `--from-agent`; o manager transcreveu à mão o relatório com `Verdict: FAIL` e perdeu o texto original e a medição pelo transcript. Agora os dois vão juntos: a revisão de design fica num arquivo do manager ao lado do relatório do `qa`, que o run guarda, e o relatório do agente continua salvo e medido pelo transcript. Número: relatórios do `qa` reescritos à mão pela revisão de design (meta 0).
+- **Rótulos literais no relatório do `qa`** (melhoria): o `add` recusou quatro relatórios em que o `qa` traduziu um rótulo ou escreveu uma frase depois de `ports:`. O `agents/qa.md` diz agora que os rótulos ficam literais e que `ports:` traz os números ou `none` antes de qualquer explicação. Número: relatórios do `qa` recusados pelo formato de um rótulo (meta 0).
+- **Escrita reenviada no pré-mortem** (melhoria): uma fila de nova tentativa gravou em dobro e custou uma segunda rodada de correção. A pergunta "Each failure" do `templates/spec-checklist.md` pergunta agora se a operação, reenviada depois de uma falha ou de um reinício, grava uma vez só. Número: rodadas de correção por escrita duplicada em nova tentativa.
+- **Verificação de interface por tela enquanto o `dev` ajusta** (melhoria, decisão do dono): um `fix-N` de revisão de design levou 107 min, contra 40 a 74 das tarefas, porque cada ajuste visual rodava a verificação de interface inteira (cerca de 13 min). O `agents/dev.md` diz agora que, ao ajustar, roda só as cenas das telas tocadas, e a verificação inteira uma vez antes do relatório. Os Minors continuam no mesmo `fix-N`. Número: minutos do `fix-N` de revisão de design acima da mediana das tarefas.
+
+**Ao atualizar:** nada muda.
+
 ## 1.7.0 — documentação depois do `qa` da suíte inteira não pede a suíte de novo
 
 Das entregas barra-faixa-no-meio e cartao-segue-a-fonte de um projeto do autor.

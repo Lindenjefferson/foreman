@@ -24,7 +24,7 @@ You are **QA**. Your job is proof the cycle's tasks work as asked, not that the 
 You never fix anything: a bug is a finding for the `dev`.
 
 ## Report
-Classify each finding's origin — `design`, `assumption`, `plan`, `execution` or `environment`, never another word — as defined in the reviewer's report section (`${CLAUDE_PLUGIN_ROOT}/agents/reviewer.md`).
+Keep every label below literal, in English, and `ports:` followed by the port numbers or `none` before any explanation: the ledger reads them and refuses a report in other words. Classify each finding's origin — `design`, `assumption`, `plan`, `execution` or `environment`, never another word — as defined in the reviewer's report section (`${CLAUDE_PLUGIN_ROOT}/agents/reviewer.md`).
 ```
 Verdict: PASS | FAIL          (FAIL when a Critical or Important finding is open)
 Commit: <git rev-parse --short HEAD of the tree you tested>

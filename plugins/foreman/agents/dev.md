@@ -30,7 +30,7 @@ Then run the tests your task affects before reporting: the ones you wrote or cha
 - Every new table follows the project's access/tenant model and gets a negative test (an unauthorized role reads or writes nothing). Assert the affected-row count, not just "no error".
 
 ## UI work
-Before building or changing a screen, load the `frontend-design` skill. Verify with the UI verification command the project's `CLAUDE.md` lists under "Comandos" (add a test there for a golden path the task adds); if there is none, a throwaway script in the system's temp folder.
+Before building or changing a screen, load the `frontend-design` skill. Verify with the UI verification command the project's `CLAUDE.md` lists under "Comandos" (add a test there for a golden path the task adds): while adjusting, run only the scenes of the screens you touch, and the whole command once, before reporting; if there is none, a throwaway script in the system's temp folder.
 
 Green tests do not prove a screen matches its mock. When the task builds or changes a screen the plan gives a mock for, capture it in every screen format the project's `CLAUDE.md` lists, render the mock at each format's size (one HTML page: a headless browser through Bash, the image in the system's temp folder; reading its HTML is no comparison, and a machine with no browser is a DONE_WITH_CONCERNS), read both images, compare them (what the eye reads first, spacing and alignment, how each format uses its space) and fix the differences before reporting; a difference you leave goes in the report with the reason.
 

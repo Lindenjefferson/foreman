@@ -98,8 +98,10 @@ directory or from the ledger's project root. --from-agent <agent id> saves it in
 last SubagentHandback message, else its last text) is read from its transcript,
 <config>/projects/*/*/subagents/agent-<id>.jsonl under CLAUDE_CONFIG_DIR and ~/.claude, written to
 reports/<slug>/<agent>-<id>.md beside the ledger and kept as the run's --report, so a report the manager's context
-lost in a compaction is still on disk; with no transcript it is refused, naming --report. It also measures the run
-from that transcript, as the completion notification counts it (from its first to its last timestamp, and the four
+lost in a compaction is still on disk; with no transcript it is refused, naming --report. Given with --report (a
+design review written beside qa's report), it still saves and measures, and the run keeps the --report file. It
+also measures the run from that transcript, as the completion notification counts it (from its first to its last
+timestamp, and the four
 token counts of its last message with usage), unless --seconds or --tokens is given; a dev run takes it for that
 alone (the dev's report is checked before integrating, never saved), and with no transcript it is refused, naming
 --seconds; a qa --report must hold the
@@ -1103,15 +1105,14 @@ def add(args):
                  "none")
     if args.agent == "dev" and args.report:
         sys.exit("--report keeps the file of a reviewer or qa report; the dev's report is checked before integrating")
-    if args.report and args.from_agent:
-        sys.exit("--report names a file you saved, --from-agent saves it: give one")
     if args.from_agent:
         found = transcript(args.from_agent)
         if args.agent == "dev" and not found:
             sys.exit(f"--from-agent {args.from_agent}: no transcript of that agent was found; add the run without "
                      "it, with --seconds and --tokens from its completion notification")
         if args.agent != "dev":
-            args.report = save_agent_report(args, entries, found)
+            saved = save_agent_report(args, entries, found)
+            args.report = args.report or saved
         span, used = transcript_measure(found)
         args.seconds = str(span) if args.seconds is None and span else args.seconds
         args.tokens = used if args.tokens is None and used else args.tokens
@@ -2618,7 +2619,7 @@ def main():
     command.add_argument("--origin", default="", help="design=N,assumption=N,plan=N,execution=N,environment=N")
     command.add_argument("--report", help="the file the manager saved a reviewer or qa report in")
     command.add_argument("--from-agent", help="the agent id: the run is measured from its transcript, and a reviewer "
-                         "or qa report is saved from it")
+                         "or qa report is saved from it (with --report too, the run keeps that file)")
     command.add_argument("--head", help="the commit the run reviewed or tested, when the checkout is elsewhere")
     command.add_argument("--seconds", help="how long the run took, from its completion notification: 90, 12m, 1h5m or 12m30s")
     command.add_argument("--tokens", type=count, help="the tokens the run used, from its completion notification")
