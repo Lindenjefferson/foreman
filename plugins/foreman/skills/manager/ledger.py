@@ -12,6 +12,8 @@ Commands
   add     --agent reviewer --task spec|plan|security --verdict PASS|FAIL ...
                                                               one round of the spec, plan or security review loop
   add     --agent qa ... --full | --interface                 the qa ran the full test command, or the interface
+  add     --agent newcomer --verdict PASS|FAIL [--report <path> | --from-agent <agent id>]
+                                                              the newcomer's reading at closing; it changes no step
   claim   --task <id> [--worktree <path>] [--origin <rev>]
                                                         a dev run dispatched; refused if the task is in flight or done
   release --task <id>                                         frees a claim whose run was lost
@@ -78,6 +80,11 @@ status --json gives the latest as full_qa. add --interface on a qa run marks one
 interface" command on at least one path. When the CLAUDE.md at the ledger's root gives that line a command (not a
 _(...)_ placeholder), the first cycle closes only once one of its qa runs has --interface or --full: a machine that
 cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
+
+In a delivery of one cycle (one cycle here and at most one plan cycle with tasks in the scope), the full suite runs
+once, after what changes its head: status --json gives full_qa_blockers, each missing item (the version, as the
+gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the cleanup task, or a
+note that names cleanup; each deferred item with no decision), and add --full is refused while it lists any.
 
 Cycles and fix rounds
 ---------------------
@@ -403,6 +410,7 @@ VERDICTS = {
     "dev": {"DONE", "DONE_WITH_CONCERNS", "NEEDS_CONTEXT", "BLOCKED"},
     "reviewer": {"PASS", "FAIL"},
     "qa": {"PASS", "FAIL"},
+    "newcomer": {"PASS", "FAIL"},
 }
 ORIGINS = ("design", "assumption", "plan", "execution", "environment")
 SEVERITIES = ("critical", "important", "minor")
@@ -1124,6 +1132,10 @@ def add(args):
                  "and add the run naming the file you saved")
     if args.full and args.agent != "qa":
         sys.exit("--full marks a qa run of the project's full test command")
+    before_full = full_qa_blockers(entries, args.ledger) if args.full else []
+    if before_full:
+        sys.exit("a delivery of one cycle runs its full suite once, after what changes its head: "
+                 + "; ".join(before_full))
     if args.interface and args.agent != "qa":
         sys.exit("--interface marks a qa run that ran the interface (Verificação de interface)")
     blocking = args.critical + args.important
@@ -1208,6 +1220,42 @@ def heartbeat(entries, auto):
         return None
     minutes = int((datetime.datetime.now(datetime.timezone.utc) - since).total_seconds() // 60)
     return {"minutes": minutes, "since": marks[-1]} if minutes > HEARTBEAT_MINUTES else None
+
+
+def full_qa_blockers(entries, ledger):
+    """In a delivery of one cycle, what must come before its only full qa run, so the full suite runs once: the
+    version raised as the gate's Version check wants it, the cleanup run or a note naming it skipped (with a plan),
+    and every deferred item decided."""
+    scoped = {}
+    for entry in entries:
+        if entry["type"] == "scope":
+            scoped[entry["cycle"]] = entry.get("tasks")
+    if preparing(entries) or len(cycles(entries)) > 1 or len([tasks for tasks in scoped.values() if tasks]) > 1:
+        return []
+    found = []
+    root = os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
+    base = entries[0].get("base")
+    if base and os.path.isfile(os.path.join(root, "CLAUDE.md")):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "foreman_gate", os.path.join(os.path.dirname(os.path.abspath(__file__)), "gate.py"))
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        here = os.getcwd()
+        try:
+            os.chdir(root)
+            ok, detail = gate.version(base)[:2]
+        finally:
+            os.chdir(here)
+        if not ok:
+            found.append(f"version: {detail}")
+    planned = entries[0].get("plan") or any(entry["type"] == "plan" for entry in entries)
+    if planned and not any(entry["agent"] == "dev" and entry.get("task") == "cleanup" for entry in runs(entries)) and \
+            not any(entry["type"] == "note" and "cleanup" in entry["text"].lower() for entry in entries):
+        found.append("the cleanup task has not run and no note says why it was skipped (manager step 5)")
+    found += [f"deferred {item['id']} has no decision (manager step 6)" for item in deferred(entries)
+              if not item["decision"]]
+    return found
 
 
 def gate_run(args):
@@ -2248,6 +2296,7 @@ def status(args):
     report["approval"] = standing(args.ledger)
     report["heartbeat"] = heartbeat(entries, auto)
     report["after_full_qa"] = after_full(report["full_qa"], args.ledger)
+    report["full_qa_blockers"] = full_qa_blockers(entries, args.ledger)
     report["gates"] = [{"verdict": entry["verdict"], "failed": entry.get("failed", []), "at": entry.get("at")}
                        for entry in entries if entry["type"] == "gate"]
     if args.json:
@@ -2291,6 +2340,9 @@ def status(args):
             print(f"after the full qa at {report['full_qa']['head'][:7]}: {', '.join(report['after_full_qa'])} "
                   "changed, so the gate's Full suite asks for the full qa again: defer a Minor of the final qa "
                   "instead of fixing it after it")
+        if report["full_qa_blockers"]:
+            print("before the full qa, which a delivery of one cycle runs once: "
+                  + "; ".join(report["full_qa_blockers"]))
         unfilled = report["settings"]["unfilled"]
         if unfilled:
             print("settings: unfilled, " + "; ".join(

@@ -710,6 +710,9 @@ r = gate("--base", "main")
 check("Docs is SKIP in a project the kickoff never prepared (no docs/README.md)",
       re.search(r"Docs:\s+SKIP", r.stdout) and "no docs/README.md" in r.stdout, r.stdout)
 os.makedirs(os.path.join(repo, "docs"))
+README_SECTIONS = "".join(f"\n## {title}\n\ntexto.\n" for title in re.findall(
+    r"(?m)^## (.+)$", open(os.path.join(HERE, "..", "..", "kickoff", "templates", "README.md"), encoding="utf-8").read()))
+commit("README.md", "# p\n" + README_SECTIONS, "docs: readme")
 commit("docs/README.md", "# Docs\n\n- [Arquitetura](arquitetura.md)\n- [site](https://example.com/x.md)\n", "docs")
 r = gate("--base", "main")
 check("Docs FAILs without docs/arquitetura.md, the patterns every task follows",
@@ -734,13 +737,18 @@ commit("docs/arquitetura.md", "# Arquitetura\n\n## Erros\n\nTodo erro de entrada
 r = gate("--base", "main")
 check("Docs passes with every module indexed, the patterns filled and every link alive (anchors and URLs aside)",
       re.search(r"Docs:\s+PASS", r.stdout), r.stdout)
-commit("README.md", "# p\n\nVeja [a doc](docs/README.md) e [o guia](docs/guia.md).\n", "docs: readme")
+commit("README.md", "# p\n\nVeja [a doc](docs/README.md) e [o guia](docs/guia.md).\n" + README_SECTIONS, "docs: readme")
 r = gate("--base", "main")
 check("Docs FAILs naming a dead relative link of the root README",
       re.search(r"Docs:\s+FAIL", r.stdout) and "README.md -> docs/guia.md" in r.stdout, r.stdout)
+commit("README.md", "# p\n\n_(o que o produto faz hoje)_\n" + README_SECTIONS, "docs: readme template")
+r = gate("--base", "main")
+check("Docs FAILs while a module exists and the root README still holds a placeholder",
+      re.search(r"Docs:\s+FAIL", r.stdout) and "README.md still holds a placeholder" in r.stdout, r.stdout)
 os.makedirs(os.path.join(repo, "docs", "specs"))
 commit("docs/specs/a(1).md", "x\n", "docs: a file with parentheses")
-commit("README.md", "# p\n\nVeja [a doc](docs/README.md) e [a cópia](docs/specs/a(1).md).\n", "docs: readme fixed")
+commit("README.md", "# p\n\nVeja [a doc](docs/README.md) e [a cópia](docs/specs/a(1).md).\n" + README_SECTIONS,
+       "docs: readme fixed")
 for folder in ("quality-reports", "discovery", "operacao", "plans", "mockups"):
     os.makedirs(os.path.join(repo, "docs", folder))
 commit("docs/quality-reports/2026-10-01-x.md", "# x\n", "docs: report")
@@ -805,6 +813,8 @@ check("Version is SKIP with no Versão line in a project the kickoff never prepa
       re.search(r"Version:\s+SKIP", r.stdout), r.stdout)
 os.makedirs(os.path.join(repo, "docs"))
 commit("docs/README.md", "# Docs\n", "docs: index")
+commit("docs/novidades.md", "# Novidades\n\n" + "".join(f"## {number}\n\n- a change.\n\n" for number in (
+    "2.1.0", "2.0.0", "1.0.0", "0.10.0", "0.2.0", "0.0.9")), "docs: user-facing notes")
 r = gate("--base", "main")
 check("Version FAILs with no Versão line in a project the kickoff prepared",
       re.search(r"Version:\s+FAIL", r.stdout) and "Versão" in r.stdout, r.stdout)
@@ -894,7 +904,9 @@ sh("git", "init", "-q", "-b", "main")
 sh("git", "config", "user.email", "t@t.com")
 sh("git", "config", "user.name", "t")
 marker = os.path.join(base_dir, "suite-ran").replace("\\", "/")
-commit("CLAUDE.md", f"# p\n\n## Comandos\n\n- Testes: `{PY} -c \"open('{marker}', 'w').close()\"`\n", "base")
+os.environ["GATE_MARKER"] = marker  # a temp folder under the home would be a home path in the committed CLAUDE.md
+commit("CLAUDE.md", f"# p\n\n## Comandos\n\n- Testes: `{PY} -c \"import os; open(os.environ['GATE_MARKER'], 'w').close()\"`\n",
+       "base")
 sh("git", "switch", "-q", "-c", "feat/z")
 commit("a.txt", "a\n", "feat: a")
 r = gate("--base", "main")
@@ -942,6 +954,114 @@ text = open(os.path.join(repo, "docs", "quality-reports", os.listdir(os.path.joi
             encoding="utf-8").read() if r.returncode == 0 else ""
 check("the quality report counts the gate runs before it and why each was NOT READY",
       "- Gate runs: 3 (NOT READY 1: Testes)" in text, text)
+
+# A standalone, professional project: README and docs in the pattern, the user-facing notes, the newcomer, owner terms
+repo = os.path.join(base_dir, "repo9")
+os.makedirs(os.path.join(repo, "docs", "modulos"))
+sh("git", "init", "-q", "-b", "main")
+sh("git", "config", "user.email", "t@t.com")
+sh("git", "config", "user.name", "t")
+write(".gitignore", ".superpowers/\n")
+sh("git", "add", ".gitignore")
+COMANDOS9 = f"# p\n\n## Comandos\n\n{TESTS}- Versão: `VERSION`\n"
+LONG = "Esta linha longa explica uma regra do projeto com mais de sessenta caracteres de texto."
+commit("CLAUDE.md", COMANDOS9 + "\n## Preparar uma máquina\n\n- Pré-requisitos: nenhum\n", "base")
+commit("VERSION", "1.0.0\n", "base: version")
+commit("docs/arquitetura.md", "# Arquitetura\n\nCamadas simples.\n", "base: patterns")
+commit("docs/modulos/01-core.md", "# Módulo 1 — Core\n\n**Status**: ✅ implementado — lê e grava a lista.\n", "base: core")
+commit("docs/README.md", "# Docs\n\n- [Core](modulos/01-core.md)\n", "base: index")
+commit("README.md", "# p\n\nVersão 1.0.0.\n" + README_SECTIONS, "base: readme")
+sh("git", "switch", "-q", "-c", "feat/n")
+commit("VERSION", "1.0.1\n", "chore: version 1.0.1")
+
+
+def docs_of(out):
+    found = re.search(r"Docs:\s+(\w+)((?:\n    .*)*)", out)
+    return (found.group(1), found.group(2)) if found else ("", out)
+
+
+r = gate("--base", "main")
+verdict9, detail9 = docs_of(r.stdout)
+check("Docs FAILs while the root README still names the version the base held",
+      verdict9 == "FAIL" and "README.md still names the version 1.0.0" in detail9, r.stdout)
+check("a patch needs no entry in docs/novidades.md", re.search(r"Version:\s+PASS", r.stdout), r.stdout)
+commit("README.md", "# p\n" + README_SECTIONS.replace("\n## Como usar\n\ntexto.\n", ""), "docs: readme")
+verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+check("Docs FAILs naming a section of the kickoff's README template the root README lacks, read from the template",
+      verdict9 == "FAIL" and "## Como usar" in detail9 and "## Estado" not in detail9, detail9)
+commit("README.md", "# p\n" + README_SECTIONS.upper(), "docs: readme")
+verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+check("Docs matches the template's headings by text, in any case", verdict9 == "PASS", detail9)
+for status, why in (("✅ implementado — T3 entregou a lista.", "task id"), ("🚧 parcial desde 2026-03-01.", "date"),
+                    ("🚧 em desenvolvimento, fix-2 aberto.", "task id"), ("✅ " + "lista " * 40, "200")):
+    commit("docs/modulos/01-core.md", f"# Módulo 1 — Core\n\n**Status**: {status}\n", "docs: status")
+    verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+    check(f"Docs FAILs on a module Status line with a {why}", verdict9 == "FAIL" and "01-core.md" in detail9
+          and why in detail9, detail9)
+commit("docs/modulos/01-core.md", "# Módulo 1 — Core\n\n**Status**: ✅ implementado — lê e grava a lista.\n", "docs")
+commit("CLAUDE.md", COMANDOS9 + "\n" + LONG + "\n\n## Preparar uma máquina\n\n- Pré-requisitos: nenhum\n", "docs: rule")
+commit("README.md", "# p\n\n" + LONG + "\n" + README_SECTIONS, "docs: readme copies it")
+verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+check("Docs FAILs on a long line copied between README.md and CLAUDE.md, naming both places",
+      verdict9 == "FAIL" and "README.md:3" in detail9 and "CLAUDE.md:" in detail9, detail9)
+commit("README.md", "# p\n" + README_SECTIONS, "docs: one source")
+commit("CLAUDE.md", COMANDOS9 + "- Verificação de interface: `echo ui`\n\n## Preparar uma máquina\n\n- Pré-requisitos: "
+       "nenhum\n", "docs: screens")
+verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+check("Docs FAILs when a product with screens shows no image in the root README", verdict9 == "FAIL"
+      and "image" in detail9, detail9)
+commit("README.md", "# p\n\n![A tela](docs/tela.png)\n" + README_SECTIONS, "docs: readme image")
+verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+check("Docs FAILs when the README image is no file of the repository", verdict9 == "FAIL" and "docs/tela.png" in detail9,
+      detail9)
+commit("docs/tela.png", "png\n", "docs: the capture")
+verdict9, detail9 = docs_of(gate("--base", "main").stdout)
+check("Docs passes with the README image tracked", verdict9 == "PASS", detail9)
+commit("VERSION", "1.1.0\n", "chore: version 1.1.0")
+r = gate("--base", "main")
+check("Version FAILs on a minor with no entry for it in docs/novidades.md",
+      re.search(r"Version:\s+FAIL", r.stdout) and "docs/novidades.md" in r.stdout and "1.1.0" in r.stdout, r.stdout)
+commit("docs/novidades.md", "# Novidades\n\n## 1.1.0\n\n- A lista mostra o total.\n", "docs: novidades")
+r = gate("--base", "main")
+check("Version passes once docs/novidades.md has the entry, and the file is in the docs map",
+      re.search(r"Version:\s+PASS", r.stdout) and docs_of(r.stdout)[0] == "PASS", r.stdout)
+os.makedirs(os.path.join(repo, "src", "a"))
+os.makedirs(os.path.join(repo, "guia"))
+commit("guia/fora.md", "Veja ../../outro-repo/arquivo.md.\n", "docs: outside")
+commit("src/a/b.txt", "inclui ../c.txt\n", "src: inside")
+commit("notas.md", "A saída vai para ../_temp/p-worktrees/x-saida.\n", "docs: worktree output")
+r = gate("--base", "main")
+check("the gate warns on a relative path that leaves the repository, naming file and line",
+      "guia/fora.md:1" in r.stdout and "src/a/b.txt" not in r.stdout, r.stdout)
+check("the worktree folder of the plugin is no path that leaves the repository",
+      "leaves the repository" in r.stdout and "notas.md" not in r.stdout, r.stdout)
+check("the warning does not change the Docs verdict", docs_of(r.stdout)[0] != "FAIL", r.stdout)
+ledger_cmd("start", "--slug", "n", "--base", "main")
+for agent in ("dev", "reviewer", "qa"):
+    ledger_cmd("add", "--agent", agent, "--verdict", "DONE" if agent == "dev" else "PASS",
+               *(["--task", "T1"] if agent == "dev" else []), *(["--full"] if agent == "qa" else []))
+r = gate("--base", "main")
+check("Newcomer FAILs when the version rises minor and no newcomer read the repository",
+      re.search(r"Newcomer:\s+FAIL", r.stdout) and "newcomer" in r.stdout, r.stdout)
+ledger_cmd("add", "--agent", "newcomer", "--verdict", "FAIL")
+r = gate("--base", "main")
+check("Newcomer FAILs while its blocking findings wait for the final fix-N", re.search(r"Newcomer:\s+FAIL", r.stdout)
+      and "fix-N" in r.stdout, r.stdout)
+commit("README.md", "# p\n\n![A tela](docs/tela.png)\n\nInstale com o comando do Começo rápido.\n" + README_SECTIONS,
+       "fix: newcomer")
+for agent in ("dev", "reviewer"):
+    ledger_cmd("add", "--agent", agent, "--verdict", "DONE" if agent == "dev" else "PASS",
+               *(["--task", "fix-1"] if agent == "dev" else []))
+r = gate("--base", "main")
+check("Newcomer passes once a dev run follows its FAIL", re.search(r"Newcomer:\s+PASS", r.stdout), r.stdout)
+terms = os.path.join(base_dir, "terms.txt")
+with open(terms, "w", encoding="utf-8") as handle:
+    handle.write("autor dono@x.example\n")
+sh("git", "config", "--global", "foreman.terms", terms.replace("\\", "/"))
+r = gate("--base", "main")
+check("Secrets FAILs on a commit author outside the autor lines of the owner's list (the gate runs the scanner)",
+      re.search(r"Secrets:\s+FAIL", r.stdout) and "autor" in r.stdout, r.stdout)
+sh("git", "config", "--global", "--unset", "foreman.terms")
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

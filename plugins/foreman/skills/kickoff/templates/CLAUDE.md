@@ -6,10 +6,10 @@
 
 - **Não escrever comentários nem docstrings em classes, funções ou componentes** para explicar o que fazem. O código deve se explicar por nomes e estrutura.
 - A documentação vive em [`docs/`](docs/README.md), um arquivo por módulo (`docs/modulos/NN-nome-do-modulo.md`), seguindo o template de `docs/README.md`.
-- Os padrões que todo código segue (camadas, nomes, erros, logs, testes, o mapa dos módulos e as decisões) ficam em [`docs/arquitetura.md`](docs/arquitetura.md), e publicar, backup, restauração e reversão em [`docs/operacao.md`](docs/operacao.md). Um padrão novo entra lá na tarefa que o adota; o `reviewer` aponta o código que diverge, e o `gate.py` confere o índice e os links.
-- **Toda rodada de código que criar, alterar ou remover algo de um módulo atualiza o `docs/` daquele módulo na mesma rodada** (arquivos-chave, classes/funções principais, decisões de design com o porquê, fluxo de dados, dependências e **Status**). O agente `dev` faz isso na mesma tarefa.
+- Os padrões que todo código segue (camadas, nomes, erros, logs, testes, o mapa dos módulos e as decisões) ficam em [`docs/arquitetura.md`](docs/arquitetura.md), e publicar, backup, restauração e reversão em [`docs/operacao.md`](docs/operacao.md). Um padrão novo entra lá na tarefa que o adota; o `reviewer` aponta o código que diverge, e o `gate.py` confere o índice, os links, o README e o **Status** de cada módulo.
+- **Toda rodada de código que criar, alterar ou remover algo de um módulo atualiza o `docs/` daquele módulo na mesma rodada** (arquivos-chave, decisões de design com o porquê, fluxo de dados, dependências e **Status**). O agente `dev` faz isso na mesma tarefa.
 - A documentação da API pública (quando o projeto é uma biblioteca ou expõe uma API a outros programas), no formato da ferramenta de documentação da linguagem, não conta como comentário: segue a convenção da linguagem.
-- O projeto se sustenta sozinho: documento, plano e relatório não citam outros projetos do dono nem apontam para dentro deles, e o que só serve a outro projeto mora lá.
+- O projeto se sustenta sozinho: documento, plano, relatório e teste não citam outros projetos do dono nem apontam para fora do repositório (o `gate.py` avisa um caminho `../` que sai dele), e o que só serve a outro projeto mora lá.
 - Exceção de comentário inline: um "porquê" realmente não óbvio (restrição escondida, workaround de bug específico), em uma linha. Nunca "o que" a função faz.
 - Arquivos de **especificação** (decididos antes de codar) não mudam a cada PR. `docs/` descreve o código real. Se divergirem, o código manda: atualizar o doc do módulo e, se for mudança de decisão, registrar também na spec.
 

@@ -2846,5 +2846,54 @@ check("a module doc still collides with nothing else, and other files still coll
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]) == ["src/a.kt (T1 touches src/a.kt)"],
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]))
 
+# The newcomer's reading goes in the ledger; a one-cycle delivery runs its full suite once, after what changes it
+one = os.path.join(repo, "one-cycle")
+os.makedirs(one)
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t")):
+    subprocess.run(["git", *args], cwd=one, check=True, capture_output=True)
+
+
+def in_one(*args):
+    return run(*args, cwd=one)
+
+
+def commit_one(name, text):
+    with open(os.path.join(one, name), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    for args in (("add", name), ("commit", "-q", "-m", name)):
+        subprocess.run(["git", *args], cwd=one, check=True, capture_output=True)
+
+
+commit_one("CLAUDE.md", "# p\n\n## Comandos\n\n- Versão: `VERSION`\n")
+commit_one("VERSION", "1.0.0\n")
+commit_one("plan.md", "# plan\n\n### T1\n- Goal: a\n")
+in_one("start", "--slug", "one", "--base", "main", "--plan", "plan.md")
+in_one("scope", "--cycle", "1", "--tasks", "T1")
+for agent, verdict, task in (("dev", "DONE", "T1"), ("reviewer", "PASS", ""), ("qa", "PASS", "")):
+    in_one("add", "--agent", agent, "--verdict", verdict, *(["--task", task] if task else []))
+check("the newcomer's verdict is PASS or FAIL", in_one("add", "--agent", "newcomer", "--verdict", "DONE").returncode != 0)
+r = in_one("add", "--agent", "newcomer", "--verdict", "FAIL")
+state = json.loads(in_one("status", "--json").stdout)
+check("a newcomer run is recorded and opens no pending item of the cycle", r.returncode == 0 and state["ready_for_gate"]
+      and any(entry["agent"] == "newcomer" for entry in state["runs"]), (r.stderr, state["pending"]))
+in_one("defer", "--text", "a minor", "--recommend", "fix it")
+blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
+check("in a one-cycle delivery, status names what must come before the full qa: version, cleanup, deferred items",
+      len(blockers) == 3 and any("version" in item for item in blockers) and any("cleanup" in item for item in blockers)
+      and any("D1" in item for item in blockers), blockers)
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("add --full is refused while any of them is missing, naming each", r.returncode != 0 and "cleanup" in r.stderr
+      and "version" in r.stderr, r.stderr)
+commit_one("VERSION", "1.1.0\n")
+in_one("resolve", "--id", "D1", "--decision", "discarded: no user sees it")
+in_one("note", "--text", "cleanup skipped: nothing left duplicated or dead")
+check("once the version rose, the cleanup was noted as skipped and every deferred item decided, nothing blocks it",
+      json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [] and
+      in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
+in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T2")
+in_one("scope", "--cycle", "2", "--tasks", "T2")
+check("a delivery of more than one cycle has no such blockers",
+      json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [])
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

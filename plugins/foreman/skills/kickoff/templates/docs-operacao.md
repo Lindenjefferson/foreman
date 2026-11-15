@@ -6,7 +6,7 @@ Como o produto é publicado, guardado e recuperado. Quem executa é uma pessoa: 
 
 _(os comandos, a ordem, o que confere que a publicação deu certo, e o que cada canal (loja, provedor de login, hospedagem) exige antes da primeira publicação, cada exigência com a prova)_
 
-Antes do primeiro push para qualquer remoto, público ou privado, rode a skill `anonimizar` do Foreman: dado pessoal costuma sobreviver no histórico do git, não só nos arquivos atuais, um repositório privado pode virar público com o histórico junto, e limpar só os arquivos não basta.
+Quando esta máquina não tem a lista de termos do dono (`git config --global foreman.terms`) ou o projeto é anterior a ela, rode a skill `anonimizar` do Foreman antes do primeiro push para qualquer remoto, público ou privado: dado pessoal costuma sobreviver no histórico do git, e um repositório privado pode virar público com o histórico junto. Com a lista, o `pre-commit` e o `gate.py` barram o dado pessoal a cada commit.
 
 ## Backup e restauração
 
