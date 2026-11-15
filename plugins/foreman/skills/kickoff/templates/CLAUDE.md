@@ -9,7 +9,7 @@
 - Os padrões que todo código segue (camadas, nomes, erros, logs, testes, o mapa dos módulos e as decisões) ficam em [`docs/arquitetura.md`](docs/arquitetura.md), e publicar, backup, restauração e reversão em [`docs/operacao.md`](docs/operacao.md). Um padrão novo entra lá na tarefa que o adota; o `reviewer` aponta o código que diverge, e o `gate.py` confere o índice, os links, o README e o **Status** de cada módulo.
 - **Toda rodada de código que criar, alterar ou remover algo de um módulo atualiza o `docs/` daquele módulo na mesma rodada** (arquivos-chave, decisões de design com o porquê, fluxo de dados, dependências e **Status**). O agente `dev` faz isso na mesma tarefa.
 - A documentação da API pública (quando o projeto é uma biblioteca ou expõe uma API a outros programas), no formato da ferramenta de documentação da linguagem, não conta como comentário: segue a convenção da linguagem.
-- O projeto se sustenta sozinho: documento, plano, relatório e teste não citam outros projetos do dono nem apontam para fora do repositório (o `gate.py` avisa um caminho `../` que sai dele), e o que só serve a outro projeto mora lá.
+- O projeto se sustenta sozinho: cita outro sistema só como dependência declarada na linha "Depende de" de "Comandos", o que só serve a outro projeto mora lá, e nenhum caminho entra em outro repositório (o `gate.py` barra um `../` que sai do repositório nos testes e nos comandos, e o avisa no resto).
 - Exceção de comentário inline: um "porquê" realmente não óbvio (restrição escondida, workaround de bug específico), em uma linha. Nunca "o que" a função faz.
 - Arquivos de **especificação** (decididos antes de codar) não mudam a cada PR. `docs/` descreve o código real. Se divergirem, o código manda: atualizar o doc do módulo e, se for mudança de decisão, registrar também na spec.
 
@@ -28,6 +28,7 @@ Os agentes (`dev`, `qa`) usam esta seção para rodar e verificar o projeto, e o
 - Arquivos de teste (globs separados por espaço; o `gate.py` procura neles o id de cada critério de aceite): _(globs)_
 - Auditoria (vulnerabilidades das dependências; opcional): _(comando)_
 - Versão (os arquivos que guardam a versão do produto, separados por espaço; todos com o mesmo `x.y.z`, sem sufixo de pré-lançamento, que o `gate.py` exige acima do da branch principal, a cada entrega; o manager a sobe no passo 6): _(ex.: `package.json`)_
+- Depende de (cada sistema externo de que o projeto depende, o que usa dele e a versão ou o contrato, como tag, pacote ou URL; o `foreman` e as extensões de "Preparar uma máquina" são ferramentas de desenvolvimento já declaradas; o scanner de commits aceita o nome declarado aqui, e o `gate.py` avisa quando a linha muda): _(ou "nada")_
 - Tempo máximo de cada comando do gate, em minutos (padrão 15): _(número entre crases, só quando um comando passa disso)_
 - Verificação de interface (se houver tela): _(comando)_
 - Servidor para a verificação de interface (o mesmo que o runner sobe, com as variáveis do ambiente de teste; quem sobe o servidor à mão usa este): _(comando)_
