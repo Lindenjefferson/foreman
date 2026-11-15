@@ -84,7 +84,7 @@ Noutro computador, num projeto que já usa o plugin: clone, instale o plugin e p
 | [`validar`](plugins/foreman/skills/validar/SKILL.md) | Percorre com você, item a item, as decisões tomadas em seu nome (lista VALIDAR) e grava cada resposta. |
 | [`atualizar`](plugins/foreman/skills/atualizar/SKILL.md) | Atualiza o plugin num projeto num ponto de parada da entrega e, na sessão nova, acrescenta as linhas novas dos templates e aplica as notas de cada versão pulada. |
 | [`feedback-plugin`](plugins/foreman/skills/feedback-plugin/SKILL.md) | No fim da entrega, escreve o pedido para a sessão do plugin, com métricas e lições candidatas a regra geral. |
-| [`anonimizar`](plugins/foreman/skills/anonimizar/SKILL.md) | Antes de publicar um projeto: tira os dados pessoais dos arquivos e do histórico, enxuga a documentação e pede ao `newcomer` a leitura de quem nunca o viu. |
+| [`anonimizar`](plugins/foreman/skills/anonimizar/SKILL.md) | Antes de publicar um projeto: tira os dados pessoais e as menções a outros projetos seus dos arquivos e do histórico, enxuga a documentação e pede ao `newcomer` a leitura de quem nunca o viu. |
 | [`discovery`](plugins/foreman/agents/discovery.md) | Extrai fatos das fontes brutas (planilhas, apps de referência, documentos) antes do design e prepara o debate da spec (o pré-respondido, opções e sugestão para o resto; stacks num projeto novo). |
 | [`dev`](plugins/foreman/agents/dev.md) | Implementa uma tarefa com o teste primeiro e atualiza a doc do módulo. |
 | [`reviewer`](plugins/foreman/agents/reviewer.md) | Revisa a spec, o plano e o diff de cada ciclo; só reporta o que consegue provar. |
