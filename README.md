@@ -110,7 +110,7 @@ Peça "atualizar o plugin" na sessão do projeto: a skill [`atualizar`](plugins/
 
 ## Para onde vai
 
-As ideias em avaliação e as recusadas estão no [roadmap](docs/roadmap.md); o que cada versão entregou, no [histórico](plugins/foreman/UPGRADING.md).
+As ideias em avaliação e as recusadas estão no [roadmap](docs/roadmap.md); o que cada versão entregou, no [histórico](plugins/foreman/UPGRADING.md); como as peças se encaixam, na [arquitetura](docs/arquitetura.md).
 
 ## Para contribuir
 
