@@ -240,14 +240,14 @@ Usa a mesma leitura que o modo autônomo já usa para negar (o que conta como me
 `Goal:` o repositório diz onde o hub mora e a versão sobe.
 `Depends on:` T6, T8. `Touches:` `README.md`, `CLAUDE.md`, `CONTRIBUTING.md`, `.claude/settings.json`, `plugins/foreman/UPGRADING.md`, `plugins/foreman/.claude-plugin/plugin.json`, `plugins/foreman/hooks/hooks.json`, `docs/roadmap.md`. `RED: n/a`.
 
-- [ ] **Laço de testes:** em `CLAUDE.md` e `CONTRIBUTING.md`, trocar `plugins/foreman/skills/manager/tests/test_*.py` por `plugins/foreman/skills/*/tests/test_*.py`. A entrada exata de `.claude/settings.json` muda junto (confirmado pelo dono).
-- [ ] **`CLAUDE.md`:** uma linha no mapa ("Hub: uma sessão que delega a vários projetos" → `skills/hub/SKILL.md` e a docstring do `hub.py`), o `hub.py` na regra "Teste primeiro" e a pasta de testes na linha "Testes dos scripts". O arquivo segue abaixo de 200 linhas.
-- [ ] **`README.md`:** uma linha em "Componentes" e uma frase em "Começo rápido": o hub é a única pasta que não é projeto e recebe o plugin.
-- [ ] **`hooks.json`:** a `description` cita a sessão de hub e, com a T8, a pergunta antes do merge na principal. O README (linha "Guarda dos comandos") e a linha dos hooks no mapa do `CLAUDE.md` dizem o mesmo.
-- [ ] **Versão:** `plugin.json` para `1.12.0`; seção `## 1.12.0` no `UPGRADING.md` com o item (melhoria, decisão do dono), o número da meta de sucesso da spec, o PR e "**Ao atualizar:** quem quer o hub instala o plugin na pasta-raiz dos projetos e chama `/foreman:hub`. Com a T8: no modo supervisionado, o merge na branch principal e o merge de PR passam a perguntar antes, como o push já perguntava." A T8 entra como item à parte (melhoria, decisão do dono; número: merges na principal sem pergunta no modo supervisionado, meta 0).
-- [ ] **Roadmap:** o item do hub sai do Backlog.
-- [ ] **Os cinco comandos** de "Testar e validar" do `CLAUDE.md`. Esperado: `ALL PASS` em cada arquivo e validações sem erro.
-- [ ] **Commit** `docs: hub no mapa, README e histórico; versão 1.12.0`.
+- [x] **Laço de testes:** em `CLAUDE.md` e `CONTRIBUTING.md`, trocar `plugins/foreman/skills/manager/tests/test_*.py` por `plugins/foreman/skills/*/tests/test_*.py`. A entrada exata de `.claude/settings.json` muda junto (confirmado pelo dono).
+- [x] **`CLAUDE.md`:** uma linha no mapa ("Hub: uma sessão que delega a vários projetos" → `skills/hub/SKILL.md` e a docstring do `hub.py`), o `hub.py` na regra "Teste primeiro" e a pasta de testes na linha "Testes dos scripts". O arquivo segue abaixo de 200 linhas.
+- [x] **`README.md`:** uma linha em "Componentes" e uma frase em "Começo rápido": o hub é a única pasta que não é projeto e recebe o plugin.
+- [x] **`hooks.json`:** a `description` cita a sessão de hub e, com a T8, a pergunta antes do merge na principal. O README (linha "Guarda dos comandos") e a linha dos hooks no mapa do `CLAUDE.md` dizem o mesmo.
+- [x] **Versão:** `plugin.json` para `1.12.0`; seção `## 1.12.0` no `UPGRADING.md` com o item (melhoria, decisão do dono), o número da meta de sucesso da spec, o PR e "**Ao atualizar:** quem quer o hub instala o plugin na pasta-raiz dos projetos e chama `/foreman:hub`. Com a T8: no modo supervisionado, o merge na branch principal e o merge de PR passam a perguntar antes, como o push já perguntava." A T8 entra como item à parte (melhoria, decisão do dono; número: merges na principal sem pergunta no modo supervisionado, meta 0).
+- [x] **Roadmap:** o item do hub sai do Backlog.
+- [x] **Os cinco comandos** de "Testar e validar" do `CLAUDE.md`. Esperado: `ALL PASS` em cada arquivo e validações sem erro.
+- [x] **Commit** `docs: hub no mapa, README e histórico; versão 1.12.0`.
 
 ## Verificação à mão (antes do PR)
 
@@ -276,7 +276,7 @@ Tomadas em nome do dono nesta spec; ele confirma na aprovação do plano:
 - S1 e S2 (sessão `spike-s1` aberta por `wt.exe -w new -d <pasta> claude --permission-mode auto -n spike-s1`, ambiente limpo): aparece no `ListAgents` cerca de 25 s depois, com o nome dado em `-n` e sem o sufixo de conta que o `cc` põe; recebeu um `SendMessage` de uma sessão em `auto` sem retenção e respondeu pelo mesmo canal, em `auto`, no `cwd` certo. Não rodado: o ramo do `Start-Process` (o S1 fica aberto só nele) e a skill `foreman:manager` listada na própria janela (o S5 conferiu isso num `claude -p`).
 - T7, decisões de fechamento: os padrões do `wt.exe` e do `Start-Process` ganharam `-n <nome>`, para o hub achar a sessão no `ListAgents` (o S1 mostrou que ela aparece por esse nome); os códigos de erro `exists`, `bad-name`, `usage` e `busy` entraram na tabela da spec; o `claim` também roda no `/clear`; um registro sem `dono` pode ser escrito por qualquer sessão até o próximo início de sessão assumi-lo; o AC-T5-6 tem duas exceções registradas: `hub.py claim` é negado em toda sessão, e a escrita no registro sem `session_id` é negada quando já há dono.
 
-## VALIDAR (noite de 17 para 18/11, modo autônomo)
+## VALIDAR (modo autônomo, antes da aprovação 1)
 
 Decisões tomadas em nome do dono, com a opção recomendada. **Confirmadas pelo dono:** as cinco seguem a recomendação, o plano está aprovado (✋ 1) e a T5 ganha o AC-T5-7.
 

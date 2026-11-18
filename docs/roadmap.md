@@ -7,7 +7,7 @@ Toda ideia passa pelo filtro do [`CLAUDE.md`](../CLAUDE.md) e termina numa desta
 ## Não triadas
 
 - **Lacunas da autoavaliação contra as boas práticas do dono** (decisão do dono, pela nota do vault; VALIDAR da noite do hub): teto de rodadas de correção também no modo autônomo (hoje sem limite, de propósito); etiqueta "pre-existing" no relatório do `reviewer` para o defeito antigo achado fora do diff; modelo de PR com Testing, Risk e How to revert (o manager não define corpo de PR); critério nomeado "a doc diz o que o código faz?" no `reviewer`. Cada uma passa sozinha pelo filtro. Esforço: P cada.
-- **`bash-guard` cego a caminhos até a principal que ainda restam** (revisão do Fable da T8; a 1.12.0 entregou outra pasta por `-C`, `cd <abs>` e `--git-dir`, `-c alias.*` e o outro shell): `gh pr --repo o/r merge`, prefixos (`timeout`, `sudo`, `nice`), `$(...)` e crases, `gh api` por graphql, `/merges` ou refs, um alias gravado na config do git, `curl`, `pull`/`rebase`/`reset` na principal. Passa pelo filtro. Esforço: M.
+- **`bash-guard` cego a caminhos até a principal que ainda restam** (revisão do Fable da T8; a 1.12.0 entregou outra pasta por `-C`, `cd <abs>` e `--git-dir`, `-c alias.*` e o outro shell): `gh pr --repo o/r merge`, prefixos (`timeout`, `sudo`, `nice`), `$(...)` entre aspas e crases, `gh api` por graphql, `/merges` ou refs, um alias gravado na config do git, `curl`, `pull`/`rebase`/`reset` na principal. Passa pelo filtro. Esforço: M.
 
 ## Backlog
 
