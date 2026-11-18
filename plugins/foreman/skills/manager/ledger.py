@@ -81,16 +81,17 @@ interface" command on at least one path. When the CLAUDE.md at the ledger's root
 _(...)_ placeholder), the first cycle closes only once one of its qa runs has --interface or --full: a machine that
 cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
 
-In a delivery of one cycle (one cycle here and at most one plan cycle with tasks in the scope), the full suite runs
-once, after what changes its head: status --json gives full_qa_blockers, each missing item (the version, as the
-gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the cleanup task, or a
-note that names cleanup; each deferred item with no decision), and add --full is refused while it lists any.
+The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: status --json
+gives full_qa_blockers, each missing item (the reviewer's PASS after the latest dev run, a waiver included; the version,
+as the gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the cleanup task,
+or a note that names cleanup; each deferred item with no decision), and add --full is refused while it lists any. A
+ledger whose last cycle ran qa --full under an earlier version still reads: that run is full_qa, as any other.
 
 Cycles and fix rounds
 ---------------------
 
-A cycle is a few dev tasks followed by one reviewer pass over their diff and one qa pass; the two run in parallel. It
-closes when the latest reviewer PASS came after the latest dev run, qa PASSed after the cycle's latest regular task,
+A cycle is a few dev tasks followed by one reviewer pass over their diff and one qa pass; the two run in parallel
+(the full qa of step 6 waits for the reviewer instead). It closes when the latest reviewer PASS came after the latest dev run, qa PASSed after the cycle's latest regular task,
 and qa ran again after every fix of a blocking (FAIL) finding. The next regular dev run opens the next cycle. A fix
 round (task fix-N) and the cleanup task (task cleanup) stay in the current cycle, even a closed one: they need a
 reviewer pass, and qa again only when a FAIL came before them.
@@ -1134,7 +1135,7 @@ def add(args):
         sys.exit("--full marks a qa run of the project's full test command")
     before_full = full_qa_blockers(entries, args.ledger) if args.full else []
     if before_full:
-        sys.exit("a delivery of one cycle runs its full suite once, after what changes its head: "
+        sys.exit("a delivery runs its full suite once, at its final head: "
                  + "; ".join(before_full))
     if args.interface and args.agent != "qa":
         sys.exit("--interface marks a qa run that ran the interface (Verificação de interface)")
@@ -1223,16 +1224,17 @@ def heartbeat(entries, auto):
 
 
 def full_qa_blockers(entries, ledger):
-    """In a delivery of one cycle, what must come before its only full qa run, so the full suite runs once: the
-    version raised as the gate's Version check wants it, the cleanup run or a note naming it skipped (with a plan),
-    and every deferred item decided."""
-    scoped = {}
-    for entry in entries:
-        if entry["type"] == "scope":
-            scoped[entry["cycle"]] = entry.get("tasks")
-    if preparing(entries) or len(cycles(entries)) > 1 or len([tasks for tasks in scoped.values() if tasks]) > 1:
+    """What must come before the delivery's only full qa run, at its final head, so the full suite runs once: the
+    reviewer's PASS after the latest dev run, the version raised as the gate's Version check wants it, the cleanup run
+    or a note naming it skipped (with a plan), and every deferred item decided."""
+    if preparing(entries):
         return []
     found = []
+    done = runs(entries)
+    last_dev = max((index for index, entry in enumerate(done) if entry["agent"] == "dev"), default=-1)
+    reviewed = [index for index, entry in enumerate(done) if entry["agent"] == "reviewer"]
+    if last_dev >= 0 and (not reviewed or reviewed[-1] < last_dev or done[reviewed[-1]]["verdict"] != "PASS"):
+        found.append("the reviewer has not PASSed after the latest dev run (manager step 6)")
     root = os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
     base = entries[0].get("base")
     if base and os.path.isfile(os.path.join(root, "CLAUDE.md")):
@@ -2341,7 +2343,7 @@ def status(args):
                   "changed, so the gate's Full suite asks for the full qa again: defer a Minor of the final qa "
                   "instead of fixing it after it")
         if report["full_qa_blockers"]:
-            print("before the full qa, which a delivery of one cycle runs once: "
+            print("before the full qa, which the delivery runs once, at its final head: "
                   + "; ".join(report["full_qa_blockers"]))
         unfilled = report["settings"]["unfilled"]
         if unfilled:

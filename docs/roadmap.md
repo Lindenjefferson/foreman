@@ -21,6 +21,7 @@ Toda ideia passa pelo filtro do [`CLAUDE.md`](../CLAUDE.md) e termina numa desta
 
 Cada item diz o sinal que o traz de volta.
 
+- **O ledger cobra a linha `Interface run:` do `dev`** (revisão do Fable da 1.12.0): hoje o `ledger.py` não lê o relatório do `dev`, e quem confere a linha é o manager. Volta quando a regra for ignorada duas vezes: então o `add` do `dev` recusa o relatório sem `Interface run:`, como o do `qa` sem `Interface:`. Esforço: P.
 - **Pico de memória do `capacity` vindo só do `CLAUDE.local.md`** (um projeto do autor, foreman 1.11.0): o `capacity` liberou 7 cópias com o pico de 1,5 GB da linha do projeto, e a memória caiu a 3,0 GB livres com três `dev` no Jest e um `qa` no emulador (nota do ledger: perto de 4 GB por `dev` com a suíte inteira, 4,1 GB o emulador). O molde já separa a suíte do `qa` e o custo da interface; a linha do projeto estava velha e dizia "a medir" para o emulador. Corrige-se no projeto. Volta se o `capacity` errar de novo com a linha atualizada; então medir o pico pelas runs ou cobrar o "a medir" da interface. Esforço: M.
 - **`add --agent qa` recusado por porta de outro agente** (mesmo projeto e entrega): a checagem já olha só as portas que o `qa` nomeia na linha `Processes:`; ele nomeou 8081, 54399 e 3199, do emulador do `dev` da `fix-2`. O custo não foi medido. Volta quando custar uma rodada ou uma hora; o caminho menor é o `qa.md` dizer que nomeia só as portas que ele mesmo abriu.
 
