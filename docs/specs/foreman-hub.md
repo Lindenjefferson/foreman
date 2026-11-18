@@ -204,6 +204,8 @@ Conferido contra as práticas do dono (arquivo de contexto só com necessidade; 
 
 - O guard reconhece a sessão de hub pelo `session_id` e acha o `hub.json` subindo a partir do `cwd`. Num projeto registrado fora da raiz, depois de um `cd` para lá, ele não acha o arquivo; valem então só os guardas do próprio projeto. Limite aceito pelo dono.
 - Os arquivos seguem a convenção do foreman, `docs/specs/<slug>.md` e `docs/plans/<slug>.md` (aceito pelo dono).
+- O `hub.py status` roda o `ledger.py status` de cada projeto marcado, e ele roda `git` na pasta do projeto, que respeita a configuração local dela (`core.fsmonitor`, por exemplo). É a mesma exposição que o `session-start.py` já tem em cada projeto; o hub só a repete em cada pasta marcada da raiz. Um clone não traz `.git/config`, então o risco é de uma pasta já adulterada na máquina.
+- As ✋ 1 e ✋ 2 não aparecem no ledger como passo `ask`; o hub as conhece pela mensagem do manager. Sem a mensagem (sessão que perdeu o endereço), o dono as vê na janela do projeto.
 - Sem polling: uma pendência aparece no hub quando o dono fala com ele ou quando chega uma mensagem.
 - Só sessões da mesma máquina.
 
