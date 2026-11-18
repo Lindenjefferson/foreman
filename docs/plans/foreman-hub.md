@@ -275,6 +275,7 @@ Tomadas em nome do dono nesta spec; ele confirma na aprovação do plano:
 - S3 (`claude -p --permission-mode auto`, hook de teste que grava o payload): `SessionStart` e `PreToolUse` trazem o mesmo `session_id`; o `SessionStart` vem sem `permission_mode`. Depois de `cd ..` num comando, o `PreToolUse` seguinte traz o `cwd` da sessão, porque o Claude Code volta à pasta quando o `cd` sai das pastas de trabalho; um `cd` dentro do mesmo comando nunca chega ao `cwd`, o que confirma o limite aceito pelo dono.
 - S1 e S2 (sessão `spike-s1` aberta por `wt.exe -w new -d <pasta> claude --permission-mode auto -n spike-s1`, ambiente limpo): aparece no `ListAgents` cerca de 25 s depois, com o nome dado em `-n` e sem o sufixo de conta que o `cc` põe; recebeu um `SendMessage` de uma sessão em `auto` sem retenção e respondeu pelo mesmo canal, em `auto`, no `cwd` certo. Não rodado: o ramo do `Start-Process` (o S1 fica aberto só nele) e a skill `foreman:manager` listada na própria janela (o S5 conferiu isso num `claude -p`).
 - T7, decisões de fechamento: os padrões do `wt.exe` e do `Start-Process` ganharam `-n <nome>`, para o hub achar a sessão no `ListAgents` (o S1 mostrou que ela aparece por esse nome); os códigos de erro `exists`, `bad-name`, `usage` e `busy` entraram na tabela da spec; o `claim` também roda no `/clear`; um registro sem `dono` pode ser escrito por qualquer sessão até o próximo início de sessão assumi-lo; o AC-T5-6 tem duas exceções registradas: `hub.py claim` é negado em toda sessão, e a escrita no registro sem `session_id` é negada quando já há dono.
+- **Revisão final, hook sem o status do hub** (decisão do dono): o `session-start.py` só imprime a linha do hub e faz o `claim`; não roda mais o `hub.py status`, que a skill `hub` roda no primeiro passo. O AC-T4-1 e as linhas da spec que dizem que o hook imprime o status valem sem essa parte.
 
 ## VALIDAR (modo autônomo, antes da aprovação 1)
 
@@ -285,7 +286,6 @@ Decisões tomadas em nome do dono, com a opção recomendada. **Confirmadas pelo
 - **Archify no gate do plugin:** fica fora; o Archify não é dependência do foreman. Recomendado: só a prática deste repositório (diagrama conferido antes de cada commit).
 - **Autoavaliação contra as boas práticas do vault:** quatro lacunas para o roadmap (teto de rodadas no modo autônomo, etiqueta "pre-existing" no relatório do `reviewer`, modelo de PR com Testing/Risk/How to revert, critério "a doc diz o que o código faz?" no `reviewer`). Recomendado: entram como "Não triadas" para passar pelo filtro.
 - **T1 a T7 não começaram:** a noite cobriu o pedido (spikes, T8, revisões do Fable). O plano do hub ainda não teve a aprovação 1, e construir um componente novo de esforço G sem ela iria contra "não executar o que não se entendeu". Recomendado: o dono aprova o plano (ou corrige) e a T1 começa na volta.
-- **Revisão final, hook sem o status do hub** (decisão do dono): o `session-start.py` só imprime a linha do hub e faz o `claim`; não roda mais o `hub.py status`, que a skill `hub` roda no primeiro passo. O AC-T4-1 e as linhas da spec que dizem que o hook imprime o status valem sem essa parte.
 
 ## VALIDAR (execução de T1 a T7)
 

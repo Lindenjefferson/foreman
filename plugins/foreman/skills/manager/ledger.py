@@ -82,7 +82,7 @@ _(...)_ placeholder), the first cycle closes only once one of its qa runs has --
 cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
 
 The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: once the
-plan has no cycle left (or with no scope), status gives full_qa_blockers, each missing item (the reviewer's PASS
+plan has no task left (or with no scope), status gives full_qa_blockers, each missing item (the reviewer's PASS
 after the latest dev run, a waiver included; a commit after its head that the gate's Reviewed check asks a review
 for, the plan and docs/lessons.md exempt as there; the version, as the gate's Version check reads the Versão line at
 the ledger's root against the base; with a plan, the cleanup task, or a note that names cleanup; each deferred item
@@ -2309,7 +2309,7 @@ def status(args):
     report["approval"] = standing(args.ledger)
     report["heartbeat"] = heartbeat(entries, auto)
     report["after_full_qa"] = after_full(report["full_qa"], args.ledger)
-    left = (report["scope"] or {}).get("cycles_left")  # mid-delivery the list is noise; add --full still checks it
+    left = (report["scope"] or {}).get("tasks_left")  # mid-delivery the list is noise; add --full still checks it
     report["full_qa_blockers"] = [] if left else full_qa_blockers(entries, args.ledger)
     report["gates"] = [{"verdict": entry["verdict"], "failed": entry.get("failed", []), "at": entry.get("at")}
                        for entry in entries if entry["type"] == "gate"]

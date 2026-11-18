@@ -34,7 +34,7 @@ Respostas do dono, também decididas: (1) com o hub aberto, ele é o canal de to
 |---|---|---|
 | `skills/hub/SKILL.md` (novo, em inglês) | Resolve a sessão, repassa pedidos, anuncia aprovações pendentes, mostra o status. | `ListAgents` e `SendMessage`; o procedimento de abrir sessão de [`references/sessions.md`](../../plugins/foreman/skills/manager/references/sessions.md), que passa a ter uma linha apontando para o `hub.py abrir`. |
 | `skills/hub/hub.py` (novo) | `init`, `status`, `add`, `set`, `remove`, `delegate`, `abrir`. Varre, lê o registro, lê os ledgers, grava o pedido. | `ledger.py status --json`; `.superpowers/atualizar.json`; `git config foreman.home`; `hooks/python.sh`. |
-| `hooks/session-start.py` | Numa pasta com `hub.json`: grava a sessão como dona do hub e imprime o `hub.py status`. | O mesmo hook que devolve o ledger ao manager; o matcher `compact` já existe. |
+| `hooks/session-start.py` | Numa pasta com `hub.json`: grava a sessão como dona do hub e imprime a linha do hub; o status vem da skill `hub` (decisão do dono na revisão final). | O mesmo hook que devolve o ledger ao manager; o matcher `compact` já existe. |
 | `hooks/bash-guard.py` | Numa sessão de hub: nega kickoff, escrita em ledger, commit, merge e push; nega escrita no registro por um hub que não é o dono. | O mesmo `PreToolUse`; nenhum hook novo no `hooks.json`. |
 | `skills/manager/SKILL.md` | Uma frase na regra do `PushNotification`: avisar também o hub, e mensagem de hub é repasse, nunca o usuário, e não carrega aprovação. | A regra que já manda avisar o usuário ao parar. |
 
@@ -117,7 +117,7 @@ Checagem, não texto: na sessão de hub o `bash-guard.py` nega `git init` e o `p
 | Projeto achado com Foreman desatualizado ou quebrado | `.superpowers/atualizar.json` na pasta: "atualização pela metade", e o `delegate` recusa. Versão em `foreman.home` diferente da do hub: aviso, sem bloquear. `ledger.py status` falha ou devolve JSON inválido: "ledger ilegível", sem derrubar o `status` dos outros. Settings que não é JSON: projeto ignorado, com aviso. | `test_hub.py` |
 | Registro aponta para pasta que sumiu | `status` mostra "pasta ausente"; `delegate` e `abrir` recusam; a entrada só sai com `remove`, a pedido do dono. | `test_hub.py` |
 | Conta registrada foi removida do abridor | O comando falha ou a sessão não aparece: é o passo 4 de "Abrir uma sessão". O hub não troca de conta sozinho e oferece corrigir o registro. | `test_hub.py` (comando que falha) |
-| Aprovação pendente quando o hub fecha e reabre | A pendência mora no ledger do projeto. O `session-start.py` imprime o `hub.py status` na abertura. | `test_session_start.py` |
+| Aprovação pendente quando o hub fecha e reabre | A pendência mora no ledger do projeto. A skill `hub` roda o `hub.py status` no primeiro passo. | `test_hub.py` |
 | Dois hubs na mesma raiz | O mais novo vira `dono`. O antigo tem toda escrita no registro negada pelo `bash-guard.py` com "outro hub assumiu"; ler continua livre. Escrita do `hub.json` é atômica (arquivo temporário e troca). | `test_bash_guard.py` |
 | Hub aberto dentro de um projeto | `init` recusa. | `test_hub.py` |
 | `hub.json` corrompido | Todo subcomando sai com 2 e não sobrescreve o arquivo. | `test_hub.py` |
