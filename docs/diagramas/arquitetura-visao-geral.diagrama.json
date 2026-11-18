@@ -497,7 +497,7 @@
     "repository": {
       "provider": "github",
       "link_mode": "local-only",
-      "revision": "2bf64e2dc497fc0c9398a83a87f7b782587fd698"
+      "revision": "252d6b2486c8cb6320ea3406b7371e7bbd96df3a"
     }
   },
   "components": [
@@ -1046,7 +1046,7 @@
       "id": "sessionstart-hub",
       "from": "sessionstart",
       "to": "hub",
-      "label": "posse e status",
+      "label": "posse da sessão",
       "variant": "dashed"
     }
   ],
