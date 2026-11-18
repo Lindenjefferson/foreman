@@ -897,6 +897,37 @@
           "end_line": 12
         }
       ]
+    },
+    {
+      "id": "hub",
+      "type": "backend",
+      "label": "hub",
+      "sublabel": "skill, hub.py, hub.json",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        140,
+        64
+      ],
+      "sources": [
+        {
+          "path": "plugins/foreman/skills/hub/SKILL.md",
+          "line": 8,
+          "end_line": 8
+        },
+        {
+          "path": "plugins/foreman/skills/hub/hub.py",
+          "line": 2,
+          "end_line": 2
+        },
+        {
+          "path": "plugins/foreman/skills/hub/hub.py",
+          "line": 7,
+          "end_line": 7
+        }
+      ]
     }
   ],
   "connections": [
@@ -1003,6 +1034,20 @@
       "to": "gate",
       "label": "passo 6",
       "variant": "security"
+    },
+    {
+      "id": "hub-manager",
+      "from": "hub",
+      "to": "manager",
+      "label": "repassa o pedido, sem aprovar",
+      "variant": "dashed"
+    },
+    {
+      "id": "sessionstart-hub",
+      "from": "sessionstart",
+      "to": "hub",
+      "label": "posse e status",
+      "variant": "dashed"
     }
   ],
   "boundaries": [
@@ -1041,7 +1086,7 @@
       "title": "Barreiras",
       "items": [
         "pre-commit barra segredo, dado pessoal e termos do dono",
-        "bash-guard nega pular o hook e a branch principal no modo autônomo; no supervisionado, pergunta antes do push e do merge nela"
+        "bash-guard nega pular o hook e a branch principal no modo autônomo; no supervisionado, pergunta antes do push e do merge nela; na sessão de hub, só git de leitura"
       ]
     },
     {
@@ -1049,7 +1094,8 @@
       "title": "Outras skills",
       "items": [
         "atualizar aplica as notas do UPGRADING.md",
-        "validar, feedback-plugin e anonimizar fecham e revisam a entrega"
+        "validar, feedback-plugin e anonimizar fecham e revisam a entrega",
+        "hub repassa pedidos a vários projetos e mostra o que espera o dono"
       ]
     }
   ]
