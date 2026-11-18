@@ -669,6 +669,53 @@ check("FIX9_T5 init where there is no hub.json yet passes for anyone",
 check("FIX9_T5 reading the registry passes for anyone",
       decision(proj_dir, f"{PY}/hub/hub.py status --raiz {root_slash}", session="p1") == "pass")
 
+# T5 fix round 2 (the re-review probe rows)
+# 1. a named folder the guard cannot resolve falls back to the cd-tracked folder and the session's
+for command, tool in (('git -C "$PWD" push origin main', "Bash"), ('git -C "$(pwd)" merge feat/x', "Bash"),
+                      ('git -C "$(git rev-parse --show-toplevel)" push origin main', "Bash"),
+                      ("git -C $REPO push origin main", "Bash"), ('git --git-dir="$PWD/.git" push origin main', "Bash"),
+                      ("GIT_DIR=$PWD/.git git merge feat/x", "Bash"), ("git -C nope merge feat/x", "Bash"),
+                      ("git -C $PWD push origin main", "PowerShell"), ("git -C (Get-Location) merge x", "PowerShell")):
+    check(f"FIX2_1_T5 a folder the guard cannot resolve keeps the session's repository ({tool}): denied {command!r}",
+          decision(autonomous, command, tool=tool) == "deny", str(run(autonomous, command, tool=tool)))
+# 2. a registry with no dono yet (fresh from init) is writable by any session; once claimed, only by the dono
+HUB_PY = os.path.join(HOOKS, "..", "skills", "hub", "hub.py")
+first = tempfile.mkdtemp(prefix="t5first_")
+subprocess.run([sys.executable, HUB_PY, "init", "--raiz", first], check=True, capture_output=True)
+first_s = first.replace(os.sep, "/")
+FIRST_WRITES = (f"{PY}/hub/hub.py add --nome a --pasta C:/a", f"{PY}/hub/hub.py set --bg on",
+                f"{PY}/hub/hub.py delegate --projeto a")
+for command in FIRST_WRITES:
+    check(f"FIX2_2_T5 a fresh hub with no dono: any session writes {command!r}",
+          decision(first, command, session="s1") == "pass", str(run(first, command, session="s1")))
+subprocess.run([sys.executable, HUB_PY, "claim", "--sessao", "s2", "--raiz", first], check=True, capture_output=True)
+for command in FIRST_WRITES:
+    check(f"FIX2_2_T5 once s2 claims, s1 is denied {command!r}", decision(first, command, session="s1") == "deny")
+    check(f"FIX2_2_T5 once s2 claims, s2 writes {command!r}", decision(first, command, session="s2") == "pass")
+check("FIX2_2_T5 with a dono, a payload with no session_id is denied", decision(first, FIRST_WRITES[0]) == "deny")
+# 3. the usual launchers are looked through
+LAUNCH_START = f"uv run python {SKILLS}/manager/ledger.py start --slug x"
+check("FIX2_3_T5 uv run python ledger.py start outside auto mode asks",
+      decision(bare_start, LAUNCH_START, mode="default") == "ask", str(run(bare_start, LAUNCH_START, mode="default")))
+for launcher in ("uv run", "poetry run", "pipenv run", "hatch run", "pdm run", "uv run --frozen"):
+    command = f"{launcher} python {SKILLS}/manager/ledger.py note --text x"
+    check(f"FIX2_3_T5 a hub session cannot write a ledger behind {launcher!r}", hub_denied(command),
+          str(run(hub_root, command, session="h2")))
+check("FIX2_3_T5 py -3 python version flag", hub_denied(f"py -3.12 {SKILLS}/manager/ledger.py note"))
+# 4. more read-only git
+for command in ("git rev-list HEAD", "git ls-tree HEAD", "git show-ref", "git ls-remote origin", "git branch --contains x",
+                "git branch --merged main", "git branch --no-merged", "git reflog", "git reflog show HEAD"):
+    check(f"FIX2_4_T5 a hub session reads with git: {command!r}", decision(hub_root, command, session="h2") == "pass",
+          str(run(hub_root, command, session="h2")))
+for command in ("git reflog expire --all", "git reflog delete HEAD@{1}"):
+    check(f"FIX2_4_T5 a hub session cannot write the reflog: {command!r}", hub_denied(command))
+# 5. git -c alias.* has a reason of its own
+alias_reason = (run(bare, "git -c alias.z=commit z -m x")[1] or ("", ""))[1]
+check("FIX2_5_T5 git -c alias.* names the alias, not the secret scan",
+      "alias" in alias_reason and "secret-scan" not in alias_reason, alias_reason)
+check("FIX2_5_T5 --no-verify keeps the secret-scan reason",
+      "secret-scan" in (run(bare, "git commit -n -m x")[1] or ("", ""))[1])
+
 config = json.load(open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8"))
 pre = config["hooks"]["PreToolUse"]
 check("hooks.json registers bash-guard.py for Bash and PowerShell",

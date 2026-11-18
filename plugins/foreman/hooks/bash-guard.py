@@ -32,7 +32,8 @@ git checkout or switch earlier in the same command counts as what is checked out
 -- or of a word that is no branch here restores files and changes nothing). Each step is read in the repository it
 runs in, in any session, with that repository's default branch, checked-out branch, ledger mode and standing
 approval, as if the command ran there. A rooted path decides alone: a git -C (every -C joined to the one before it,
-as git does), --git-dir, --work-tree, or GIT_DIR or GIT_WORK_TREE set before it (a prefix or an export). Otherwise
+as git does), --git-dir, --work-tree, or GIT_DIR or GIT_WORK_TREE set before it (a prefix or an export); a named
+folder the guard cannot resolve ($PWD, $(pwd), a missing folder) counts as none. Otherwise
 the step is read both in the folder of the latest cd to a rooted path before it and in the session's directory, and
 the stricter answer wins (deny, then ask): a cd the guard does not follow (popd, cd -, a relative cd, one inside ( )
 or $( )) cannot move the check away from the session's repository. Pushing and merging the work branch pass; in supervised mode, or with no ledger, nothing here is
@@ -45,9 +46,12 @@ delivery's quality report (docs/quality-reports/*-<slug>.md, which the gate writ
 differs from that commit only in docs/quality-reports/, and the report's version is at most the approval's --until. A
 push with --all, --mirror or --delete is still denied.
 
+A git -c or --config-env that defines an alias is denied in any session, with a reason of its own: the alias can
+hide the real subcommand (and skip the hook).
+
 Skipping the hook is denied in any project, in the foreground or background: a git commit with --no-verify (or an
 unambiguous prefix such as --no-veri) or -n (also inside a cluster such as -nm or -an), a git -c or --config-env that
-sets core.hooksPath or an alias (an alias can hide any subcommand), a GIT_CONFIG_* assignment naming it (also through env or export), and a git config that writes or
+sets core.hooksPath, a GIT_CONFIG_* assignment naming it (also through env or export), and a git config that writes or
 unsets it. The command is read word by word as the shell splits it, after the heredoc bodies the shell only passes
 along are removed, so a flag quoted inside a commit message is a message, not a flag. Wrappers such as env, command,
 time, nohup, xargs, `!`, `{` and if/then are looked through; a command given to a shell's -c (also -lc, and after
@@ -61,16 +65,18 @@ A foreman hub session (its payload session_id in "sessoes" of the .superpowers/h
 directory upwards, valid by hub.py's own check, and with no .superpowers/ledger.jsonl beside it: there the project
 wins; links and junctions resolved) only reads and delegates. Denied in it, in the foreground or background, git -C
 included: any git outside the read-only list (status, log, diff, show, rev-parse, ls-files, describe, shortlog,
-blame, grep, cat-file, for-each-ref, merge-base, name-rev; remote alone or -v; branch with no name or with --list;
-config --get, --get-all or --list; symbolic-ref with one name; worktree list; stash list; tag alone or -l), so
+blame, grep, cat-file, for-each-ref, merge-base, name-rev, rev-list, ls-tree, show-ref, ls-remote; remote alone or
+-v; branch with no name or with --list, --contains, --merged or --no-merged; config --get, --get-all or --list;
+symbolic-ref with one name; worktree list; stash list; reflog alone or show; tag alone or -l), so
 commit, merge, push, fetch, pull, reset and init too; any ledger.py command but status; gate.py;
 pre-commit-secret-scan.py --install-pre-commit (the first writing steps of a kickoff). A script counts when it runs:
-as the program, as the script of python, py, sh or bash (also through python.sh), or as python -m <name>; reading
+as the program, as the script of python, py, sh or bash (also through python.sh and behind uv, poetry, pipenv, hatch
+or pdm run), or as python -m <name>; reading
 its file (cat, grep, ls) passes. The reason reads "hub session: <step> belongs to the project's session". A hub
 session that is not the "dono" is denied hub.py delegate, add, set, remove and init ("another hub session took over
 this root"); status and abrir pass. In any session, those writing commands are denied when the root they name
-(--raiz, else the session's directory) has a valid hub.json whose dono is another session; init where there is none
-passes. hub.py claim is denied in every session, since only the SessionStart hook runs it. Without a session_id, or
+(--raiz, else the session's directory) has a valid hub.json whose dono is another session (no session_id included);
+a registry with no dono yet (fresh from init) is written by any session, and the next SessionStart claims it. hub.py claim is denied in every session, since only the SessionStart hook runs it. Without a session_id, or
 with an invalid hub.json, the session is no hub session; a hub.json or hub.py that fails to load leaves the rest of
 the guard on.
 
@@ -331,9 +337,11 @@ def ps_segments(command):
 
 
 def hooks_path(key):
-    """True for a config key that can skip the hook: core.hooksPath, or an alias (an alias can hide any subcommand)."""
-    name = key.split("=", 1)[0].lower()
-    return name == "core.hookspath" or name.startswith("alias.")
+    return key.split("=", 1)[0].lower() == "core.hookspath"
+
+
+def alias_key(key):
+    return key.split("=", 1)[0].lower().startswith("alias.")
 
 
 PS_COMMAND_FLAGS = ("/c", "/k", "/r", "//c", "//k")  # //c: cmd's /c as Git Bash passes it
@@ -419,12 +427,14 @@ GIT_VALUE = ("-C", "--git-dir", "--work-tree", "--namespace", "--attr-source")
 
 
 def git_command(arguments):
-    """The git subcommand and its arguments, past git's own options, and whether those options set core.hooksPath."""
+    """The git subcommand and its arguments, past git's own options, and whether those options set core.hooksPath
+    (True) or else an alias ("alias", which can hide the real subcommand)."""
     rest, override = list(arguments), False
     while rest and rest[0].startswith("-"):
         option, _, attached = rest[0].partition("=")
         if option in ("-c", "--config-env"):
-            override = override or hooks_path(attached or (rest[1] if len(rest) > 1 else ""))
+            key = attached or (rest[1] if len(rest) > 1 else "")
+            override = True if hooks_path(key) else override or ("alias" if alias_key(key) else False)
             rest = rest[1:] if attached else rest[2:]
         elif option in GIT_VALUE and not attached:
             rest = rest[2:]
@@ -441,7 +451,7 @@ def skips_hook(command, powershell=False):
         if program != "git":
             continue
         name, rest, override = git_command(arguments)
-        if override:
+        if override is True:
             return True
         if name == "config":
             keys = [i for i, word in enumerate(rest) if word.lower() == "core.hookspath"]
@@ -450,6 +460,12 @@ def skips_hook(command, powershell=False):
         elif name == "commit" and commit_skips(rest):
             return True
     return False
+
+
+def sets_alias(command, powershell=False):
+    """True when a git step defines an alias on its command line (git -c alias.x=..., --config-env=alias.x=...)."""
+    return any(program == "git" and git_command(arguments)[2] == "alias"
+               for program, arguments, _ in simple_commands(command, powershell))
 
 
 def git_out(cwd, *args):
@@ -580,7 +596,8 @@ GIT_PLACE = re.compile(r"GIT_(DIR|WORK_TREE)=(.*)")
 def git_folders(arguments, places, bases):
     """The folders a git step may run in. Every -C joins the one before it, as git does, and --git-dir, --work-tree
     and GIT_DIR or GIT_WORK_TREE (places) name the repository the same way; a rooted path decides alone, a relative
-    one joins each base (the folder cd tracking gives and the session's: the stricter answer wins, see reaches_main)."""
+    one joins each base (the folder cd tracking gives and the session's: the stricter answer wins, see reaches_main).
+    When none of the named folders exists, the bases are read."""
     paths, place, rest = [], dict(places), list(arguments)
     while rest and rest[0].startswith("-"):
         option, sep, value = rest[0].partition("=")
@@ -595,16 +612,18 @@ def git_folders(arguments, places, bases):
     named = place.get("WORK_TREE") or place.get("DIR")
     if named:
         paths.append(named)
+    named = bases
     for path in paths:
-        bases = [folder_of(path, base) for base in (["/"] if ROOTED.match(path) else bases)]
+        named = [folder_of(path, base) for base in (["/"] if ROOTED.match(path) else named)]
     found = []
-    for folder in bases:
+    for folder in named:
         folder = os.path.abspath(folder)
         if os.path.basename(folder) == ".git":
             folder = os.path.dirname(folder)
         if os.path.isdir(folder) and folder not in found:
             found.append(folder)
-    return found
+    # a name the guard cannot resolve ($PWD, $(pwd), a missing folder): read the bases instead, never nothing
+    return found or [folder for folder in dict.fromkeys(map(os.path.abspath, bases)) if os.path.isdir(folder)]
 
 
 def reaches_main(command, cwd, powershell=False):
@@ -700,12 +719,18 @@ UNATTENDED = {"auto", "bypassPermissions"}
 
 INTERPRETER = re.compile(r"python[\d.]*w?|py|sh|bash|zsh|dash")
 PYTHON_VALUE = {"-W", "-X", "-Q"}
+LAUNCHERS = {"uv", "poetry", "pipenv", "hatch", "pdm"}
 
 
 def script_args(program, arguments, name):
     """The arguments of the script called name (ledger.py, gate.py, hub.py) when the step runs it: as the program
     itself, or as the script an interpreter runs (python, py, sh, bash, also through python.sh), python -m <name>
     included; past ledger.py's --ledger. None when the step does not run it (cat ledger.py, python -c ...)."""
+    if program in LAUNCHERS and arguments[:1] == ["run"]:
+        rest = list(arguments[1:])
+        while rest and rest[0].startswith("-"):  # shortcut: a launcher option with a value (uv run --with x) is not read
+            rest = rest[1:]
+        return script_args(program_name(rest[0]), rest[1:], name) if rest else None
     if program == name:
         rest = list(arguments)
     elif INTERPRETER.fullmatch(program):
@@ -776,8 +801,10 @@ def hub_session(cwd, session_id):
 HUB_COMMANDS = {"init", "status", "add", "set", "remove", "delegate", "abrir", "claim"}
 HUB_WRITES = {"delegate", "add", "set", "remove", "init"}
 GIT_READS = {"status", "log", "diff", "show", "rev-parse", "ls-files", "describe", "shortlog", "blame", "grep",
-             "cat-file", "for-each-ref", "merge-base", "name-rev", "help", "version", ""}
-BRANCH_READS = {"-a", "-r", "-v", "-vv", "--all", "--remotes", "--verbose", "--list", "-l", "--show-current"}
+             "cat-file", "for-each-ref", "merge-base", "name-rev", "rev-list", "ls-tree", "show-ref", "ls-remote",
+             "help", "version", ""}
+BRANCH_LISTS = {"--list", "-l", "--contains", "--no-contains", "--merged", "--no-merged", "--points-at"}
+BRANCH_READS = {"-a", "-r", "-v", "-vv", "--all", "--remotes", "--verbose", "--show-current"} | BRANCH_LISTS
 CONFIG_WRITES = {"--add", "--replace-all", "--unset", "--unset-all", "--rename-section", "--remove-section", "--edit",
                  "-e", "set", "unset", "rename-section", "remove-section", "edit"}
 TOOK_OVER = ("another hub session took over this root: only the newest hub session writes the registry. This one "
@@ -793,11 +820,13 @@ def git_reads(name, rest):
         return rest in ([], ["-v"], ["--verbose"])
     if name == "branch":
         return all(word in BRANCH_READS for word in rest if word.startswith("-")) \
-            and (not positional or bool({"--list", "-l"} & set(rest)))
+            and (not positional or bool(BRANCH_LISTS & set(rest)))
     if name == "config":
         return bool(CONFIG_READS & set(rest)) and not CONFIG_WRITES & set(rest)
     if name == "symbolic-ref":
         return len(positional) <= 1 and not {"-d", "--delete"} & set(rest)
+    if name == "reflog":
+        return rest[:1] in ([], ["show"])
     if name in ("worktree", "stash"):
         return rest[:1] == ["list"]
     if name == "tag":
@@ -820,7 +849,7 @@ def hub_denial(command, powershell, role, cwd, session_id):
             raiz = next((after for word, after in zip(hub, hub[1:]) if word == "--raiz"), None) or next(
                 (word.split("=", 1)[1] for word in hub if word.startswith("--raiz=")), None)
             data = hub_registry(folder_of(raiz, cwd) if raiz else cwd)
-            if data and data.get("dono") != session_id:
+            if data and data.get("dono") and data["dono"] != session_id:
                 return TOOK_OVER if session_id in data.get("sessoes", []) else (
                     f"hub.py {sub} writes a hub's registry, and only that hub's owner session (its newest hub "
                     "window) writes it; ask there.")
@@ -944,12 +973,15 @@ def main():
                                               "restart the session in auto mode first?")}}, sys.stdout)
         return
     skips = skips_hook(command, powershell)
-    publishes = None if skips or hub_reason else reaches_main(command, cwd, powershell)
+    aliased = not skips and sets_alias(command, powershell)
+    publishes = None if skips or hub_reason or aliased else reaches_main(command, cwd, powershell)
     if hub_reason:
         reason = hub_reason
+    elif aliased:
+        reason = ("git -c alias.* can hide the real subcommand (and skip the pre-commit hook): define the alias in git "
+                  "config, or run the command itself.")
     elif skips:
-        reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n, a core.hooksPath override or a git -c "
-                  "alias), and a "
+        reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n or a core.hooksPath override), and a "
                   "secret committed stays in the history. Commit without it; if the hook blocks, fix what it reports "
                   "(a false positive is allowlisted by the user, as its message explains).")
     elif publishes == "deny":
