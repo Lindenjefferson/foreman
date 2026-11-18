@@ -179,6 +179,38 @@ r = hub("startup", "s1", cwd=sub_hub)
 check("hub: a subfolder is not the hub", r.stdout == "" and "dono" not in read_reg(), r.stdout)
 
 
+# T4 fix round 1
+import time
+reg()
+open(os.path.join(hubdir, ".superpowers", "hub.lock"), "w").close()
+t0 = time.time()
+r = hub("startup", "s20")
+check("hub: a held lock keeps the hook under its 10 s and prints the hub line", time.time() - t0 < 8
+      and r.returncode == 0 and "foreman hub" in r.stdout and "No projects" in r.stdout, f"{time.time() - t0} {r.stdout}{r.stderr}")
+check("hub: a failed claim is named after the hub line", r.stdout.splitlines()[1].startswith("busy"), r.stdout)
+os.remove(os.path.join(hubdir, ".superpowers", "hub.lock"))
+reg()
+hub("clear", "s30")
+check("hub: clear claims", read_reg().get("dono") == "s30", str(read_reg()))
+hub("compact", "s31")
+check("hub: compact does not claim", read_reg().get("dono") == "s30", str(read_reg()))
+hub("startup", "-x")
+check("hub: an id starting with - is the id, not an option", read_reg().get("dono") == "-x", str(read_reg()))
+rel = subprocess.run([sys.executable, SCRIPT], cwd=os.path.dirname(hubdir), input=json.dumps(
+    {"source": "startup", "cwd": os.path.basename(hubdir), "session_id": "rel1"}), capture_output=True, text=True,
+    encoding="utf-8")
+check("hub: a relative cwd works", read_reg().get("dono") == "rel1" and "No projects" in rel.stdout, rel.stdout + rel.stderr)
+proj_hub = tempfile.mkdtemp(prefix="sessionstart_projhub_")
+os.makedirs(os.path.join(proj_hub, ".superpowers"))
+open(os.path.join(proj_hub, ".superpowers", "hub.json"), "w").write(EMPTY)
+for cmd in (["init", "-q"], ["-c", "user.email=t@t.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "b"]):
+    subprocess.run(["git"] + cmd, cwd=proj_hub, check=True)
+subprocess.run([sys.executable, LEDGER, "start", "--slug", "x"], cwd=proj_hub, check=True, capture_output=True)
+r = run(proj_hub, payload={"source": "resume", "cwd": proj_hub, "session_id": "p1"})
+check("hub: a ledger wins; hub.json is ignored with one line and the project output follows",
+      "ignored" in r.stdout and "kickoff does not run" not in r.stdout and "Delivery ledger" in r.stdout
+      and "dono" not in open(os.path.join(proj_hub, ".superpowers", "hub.json")).read(), r.stdout + r.stderr)
+
 config = json.load(open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8"))
 groups = config["hooks"]["SessionStart"]
 check("hooks.json registers session-start.py for every session start", len(groups) == 1

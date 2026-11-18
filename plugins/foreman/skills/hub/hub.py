@@ -13,8 +13,9 @@ Commands
   set     --projeto <n> --estado respondido                   the owner saw the project answer
   delegate --projeto <n> [--nao-entregue]                     stores the request (text on stdin, first 200 chars)
   abrir   --projeto <n> [--mostrar]                           opens the project's session; --mostrar only prints
-  claim   --sessao <id>                                       makes the session the owner (dono) of the hub; only
-                                                              session-start.py calls it. sessoes keeps the last five
+  claim   --sessao <id> [--espera <s>]                        makes the session the owner (dono) of the hub; only
+                                                              session-start.py calls it. sessoes keeps the last five;
+                                                              the id matches [A-Za-z0-9._-]{1,100}, --espera is the lock wait
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
 --sistema nt|posix (default: os.name; the tests pass the last two). Every command except init and a global set
@@ -155,9 +156,10 @@ def save(raiz, dados):
 
 def drop(path, token):
     """Removes the lock file only while it still holds token: a taken-over lock is never deleted by its old owner."""
+    token = token.encode("utf-8") if isinstance(token, str) else token
     for _ in range(100):  # a waiter's stat can hold the file for a moment on Windows
         try:
-            with open(path, encoding="utf-8") as f:
+            with open(path, "rb") as f:
                 if f.read() != token:
                     return
             os.remove(path)
@@ -187,7 +189,7 @@ def locked(raiz, wait=10, stale=30):
                 raise Refuse("usage", f"cannot create {path}: {x}")
         with contextlib.suppress(OSError):
             if time.time() - os.path.getmtime(path) > stale:
-                with open(path, encoding="utf-8") as f:
+                with open(path, "rb") as f:
                     old = f.read()
                 # drop() deletes only the content just read, so a lock another taker already replaced stays
                 drop(path, old)
@@ -471,8 +473,8 @@ def cmd_set(a, raiz, dados):
 
 
 def cmd_claim(a, raiz, dados):
-    if not a.sessao.strip():
-        raise Refuse("usage", "--sessao must not be empty")
+    if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", a.sessao):
+        raise Refuse("bad-name", "--sessao must match [A-Za-z0-9._-]{1,100}")
     dados["dono"] = a.sessao
     dados["sessoes"] = ([x for x in dados.get("sessoes", []) if x != a.sessao] + [a.sessao])[-5:]
     save(raiz, dados)
@@ -635,6 +637,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_abrir)
     p = sub.add_parser("claim", parents=[com])
     p.add_argument("--sessao", required=True)
+    p.add_argument("--espera", type=float, default=10)  # seconds to wait for hub.lock; the hook passes a short one
     p.set_defaults(fn=cmd_claim)
     p = sub.add_parser("remove", parents=[com])
     p.add_argument("--projeto", required=True)
@@ -658,7 +661,7 @@ def main(argv=None):
             if not a.texto.strip():
                 raise Refuse("usage", "the request text comes on stdin and is empty")
         if a.cmd in ("init", "add", "set", "remove", "delegate", "claim"):
-            with locked(raiz):  # load, change and save as one step
+            with locked(raiz, wait=getattr(a, "espera", 10)):  # load, change and save as one step
                 a.fn(a, raiz, load(raiz))
         else:
             a.fn(a, raiz, load(raiz))

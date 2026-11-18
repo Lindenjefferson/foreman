@@ -888,6 +888,29 @@ check("FIX_T4 the quoted placeholder is still refused", run(c5, "set", "--abrir"
 doc = hub.__doc__
 check("FIX_T4 the docstring has busy and the longer-quoted-string example", "busy 1" in doc and "'cd {pasta}/sub'" in doc)
 
+# T4 fix round 1
+c6 = root()
+run(c6, "init")
+for bad in ("a b", "a/b", "", "x" * 101, "a;b"):
+    rb = run(c6, "claim", "--sessao=" + bad)
+    check(f"FIX2_T4 claim refuses the id {bad[:12]!r}", rb.returncode == 1 and out(rb).split(":")[0] in ("bad-name", "usage"), out(rb))
+check("FIX2_T4 claim takes a normal id", run(c6, "claim", "--sessao=ab.C_9-1").returncode == 0)
+lk6 = os.path.join(c6, ".superpowers", "hub.lock")
+with open(lk6, "w") as fh:
+    fh.write("held")
+t0 = time.time()
+rb = run(c6, "claim", "--sessao=s1", "--espera", "0.3")
+check("FIX2_T4 claim --espera fails fast with busy", rb.returncode == 1 and out(rb).startswith("busy")
+      and time.time() - t0 < 5, out(rb))
+os.remove(lk6)
+with open(lk6, "wb") as fh:
+    fh.write(bytes([255, 254, 0]))
+check("FIX2_T4 a lock with undecodable bytes is not a traceback", run(c6, "claim", "--sessao=s2", "--espera", "0.2").returncode == 1
+      and "Traceback" not in run(c6, "claim", "--sessao=s2", "--espera", "0.2").stderr)
+os.utime(lk6, (time.time() - 120, time.time() - 120))
+rb = run(c6, "claim", "--sessao=s3")
+check("FIX2_T4 a stale lock of undecodable bytes is taken over", rb.returncode == 0 and "Traceback" not in rb.stderr, out(rb))
+
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")
 sys.exit(1 if failed else 0)
