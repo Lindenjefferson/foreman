@@ -2897,13 +2897,17 @@ check("once the version rose (and the reviewer PASSed that commit), the cleanup 
       json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [] and
       in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T2")
-in_one("scope", "--cycle", "2", "--tasks", "T2")
+in_one("scope", "--cycle", "2", "--tasks", "T2,T3")
 state = json.loads(in_one("status", "--json").stdout)
 r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
-check("with a cycle left, status shows no full_qa_blockers, and add --full is still refused until the reviewer's "
+check("with a planned task left, status shows no full_qa_blockers, and add --full is still refused until the reviewer's "
       "PASS after the latest dev run", state["full_qa_blockers"] == [] and state["scope"]["cycles_left"] == 1
       and "before the full qa" not in in_one("status").stdout and r.returncode != 0 and "reviewer" in r.stderr,
       (state["full_qa_blockers"], r.stderr))
+in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T3")
+state = json.loads(in_one("status", "--json").stdout)
+check("once no planned task is left, status lists the reviewer's missing PASS even with the cycle still open",
+      any("reviewer" in item for item in state["full_qa_blockers"]), state["full_qa_blockers"])
 in_one("add", "--agent", "reviewer", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1")
 r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
 check("a reviewer FAIL after the latest dev run still blocks the full qa", r.returncode != 0 and "reviewer" in r.stderr,
