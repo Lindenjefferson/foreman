@@ -21,14 +21,14 @@ Para testar o plugin de verdade, carregue o clone do disco num projeto de teste:
 Os cinco comandos do `CLAUDE.md`, rodados antes de abrir o PR (não há CI):
 
 ```bash
-for t in plugins/foreman/hooks/tests/test_*.py plugins/foreman/skills/manager/tests/test_*.py; do sh plugins/foreman/hooks/python.sh "$t"; done
+for t in plugins/foreman/hooks/tests/test_*.py plugins/foreman/skills/*/tests/test_*.py; do sh plugins/foreman/hooks/python.sh "$t"; done
 (cd plugins/foreman && claude plugin test)
 claude plugin validate plugins/foreman
 claude plugin validate .
 sh plugins/foreman/hooks/python.sh plugins/foreman/hooks/pre-commit-secret-scan.py --range main..HEAD
 ```
 
-Cada suíte Python roda sozinha, sem pytest, e termina em `ALL PASS`. As dos hooks levam poucos minutos; as do manager demoram mais, porque criam repositórios e rodam comandos de verdade (`test_ledger.py` é a mais longa). O laço inteiro leva de oito a quinze minutos, conforme a máquina. O `claude plugin test` roda os testes do mod em cerca de um segundo, e os dois `validate` conferem o manifesto e o marketplace. A varredura de segredos olha os commits da branch, então rode-a na branch do PR: na `main` o intervalo é vazio.
+Cada suíte Python roda sozinha, sem pytest, e termina em `ALL PASS`. As dos hooks levam poucos minutos; as dos scripts das skills (manager e hub) demoram mais, porque criam repositórios e rodam comandos de verdade (`test_ledger.py` é a mais longa). O laço inteiro leva de oito a quinze minutos, conforme a máquina. O `claude plugin test` roda os testes do mod em cerca de um segundo, e os dois `validate` conferem o manifesto e o marketplace. A varredura de segredos olha os commits da branch, então rode-a na branch do PR: na `main` o intervalo é vazio.
 
 ## Mudar
 
