@@ -12,8 +12,8 @@ Commands
   remove  --projeto <n>                                       drops a registry entry
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
---sistema nt|posix (default: os.name; the tests pass the last two), and rescans the root first.
-Exit 0 ok; 1 refusal, the error code first on the message; 2 bad-registry.
+--sistema nt|posix (default: os.name; the tests pass the last two), and rescans the root first (a write in a folder with a ledger is refused, the root must exist).
+A relative --pasta resolves against the current directory. Exit 0 ok; 1 refusal, the error code first on the message; 2 bad-registry.
 
 Rules
 -----
@@ -21,7 +21,7 @@ Rules
 - Project marker: a direct subfolder of the root whose .claude/settings.local.json or .claude/settings.json has,
   in "enabledPlugins", a key "foreman@<marketplace>" with the value true. A settings file that is not JSON
   never marks a project and is named in "avisos". A missing CLAUDE.md only says "no kickoff".
-- Project name = folder name, [A-Za-z0-9._-]+, compared with casefold(). Another name is ignored, with a warning.
+- Project name = folder name, [A-Za-z0-9][A-Za-z0-9._-]* (whole name), compared with casefold(). Another name is ignored, with a warning.
   A registered name wins over the scan; add refuses a name the registry or the scan already has.
 - Registry: <root>/.superpowers/hub.json, written only by this script, atomically (temp file, os.replace).
   {"abrir": null, "bg": false, "projetos": {"<name>": {"pasta": "<absolute>", "conta": null, "abrir": null}}}
@@ -30,11 +30,12 @@ Rules
 - Never writes inside a project folder; the only file written is the registry.
 
 Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (init on a folder with
-.superpowers/ledger.jsonl), exists 1, bad-name 1, usage 1, bad-registry 2 (nothing was overwritten).
+.superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
+argument or a --raiz that is not a folder), bad-registry 2 (nothing was overwritten).
 """
 import argparse, json, os, re, subprocess, sys, tempfile
 
-NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 INSTALL = "claude plugin install foreman@foreman --scope local"
 
 
@@ -55,8 +56,11 @@ def load(raiz):
     try:
         with open(p, encoding="utf-8") as f:
             d = json.load(f)
-        if not isinstance(d, dict) or not isinstance(d.get("projetos", {}), dict):
-            raise ValueError("not an object")
+        pr = d.get("projetos", {}) if isinstance(d, dict) else None
+        if not isinstance(pr, dict) or not all(isinstance(e, dict) and all(
+                isinstance(e[k], str) for k in ("pasta", "conta", "abrir") if e.get(k) is not None)
+                for e in pr.values()):
+            raise ValueError("wrong shape")
     except (ValueError, OSError):
         raise Refuse("bad-registry", f"{p} is not a valid hub registry; nothing was overwritten", 2)
     d.setdefault("abrir", None), d.setdefault("bg", False), d.setdefault("projetos", {})
@@ -84,7 +88,7 @@ def marked(path, avisos, nome):
         if not os.path.isfile(f):
             continue
         try:
-            with open(f, encoding="utf-8") as fh:
+            with open(f, encoding="utf-8-sig") as fh:
                 ep = json.load(fh).get("enabledPlugins")
         except (ValueError, OSError, AttributeError):
             avisos.append(f"{nome}: .claude/{fn} is not valid JSON")
@@ -101,10 +105,10 @@ def scan(raiz):
         path = os.path.join(raiz, nome)
         if nome.startswith(".") or not os.path.isdir(path) or not marked(path, avisos, nome):
             continue
-        if NAME.match(nome):
+        if NAME.fullmatch(nome):
             achados[nome] = path
         else:
-            avisos.append(f"{nome}: ignored, the name must match [A-Za-z0-9._-]+")
+            avisos.append(f"{nome}: ignored, the name must match [A-Za-z0-9][A-Za-z0-9._-]*")
     return {"projetos": achados, "avisos": avisos}
 
 
@@ -145,12 +149,15 @@ def listing(raiz, dados):
                          "origem": origem, "kickoff": os.path.isfile(os.path.join(pasta, "CLAUDE.md")),
                          "avisos": av, "entrega": None, "pedido": e.get("pedido"), "estado": e.get("estado"),
                          "minutos": None})
+    for n, e in sorted(dados["projetos"].items(), key=lambda kv: kv[0].casefold()):
+        if not find(n, todos):  # a stub of a scanned project whose folder is gone
+            projetos.append({"nome": n, "pasta": None, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
+                             "origem": "varredura", "kickoff": False, "avisos": ["missing-folder"], "entrega": None,
+                             "pedido": e.get("pedido"), "estado": e.get("estado"), "minutos": None})
     return {"raiz": raiz, "dono": dados.get("dono"), "avisos": avisos, "projetos": projetos}
 
 
 def cmd_init(a, raiz, dados):
-    if os.path.exists(os.path.join(raiz, ".superpowers", "ledger.jsonl")):
-        raise Refuse("is-project", "this folder is a project (it has a ledger); open the hub in the root folder")
     if not os.path.exists(reg_path(raiz)):
         save(raiz, dados)
     if os.path.exists(os.path.join(raiz, ".git")):
@@ -180,14 +187,17 @@ def cmd_status(a, raiz, dados):
 
 
 def cmd_add(a, raiz, dados):
-    if not NAME.match(a.nome):
-        raise Refuse("bad-name", "the name must match [A-Za-z0-9._-]+")
+    if not NAME.fullmatch(a.nome):
+        raise Refuse("bad-name", "the name must match [A-Za-z0-9][A-Za-z0-9._-]*")
     todos, _ = known(raiz, dados)
-    if find(a.nome, todos):
+    if find(a.nome, todos) or find(a.nome, dados["projetos"]):
         raise Refuse("exists", f"{a.nome!r} is already a project")
     pasta = os.path.abspath(a.pasta)
     if not os.path.isdir(pasta):
         raise Refuse("missing-folder", f"{pasta} does not exist")
+    norm = (lambda x: os.path.realpath(x).casefold()) if a.sistema == "nt" else os.path.realpath
+    if norm(pasta) in [norm(raiz)] + [norm(p) for p, _ in todos.values()]:
+        raise Refuse("exists", f"{pasta} is the hub root or already has a name")
     dados["projetos"][a.nome] = {"pasta": pasta, "conta": a.conta or None, "abrir": a.abrir or None}
     save(raiz, dados)
 
@@ -223,13 +233,19 @@ def cmd_remove(a, raiz, dados):
     save(raiz, dados)
 
 
+class Parser(argparse.ArgumentParser):
+    def error(self, message):  # exit 2 is reserved for bad-registry
+        self.print_usage(sys.stderr)
+        raise Refuse("usage", message)
+
+
 def main(argv=None):
     com = argparse.ArgumentParser(add_help=False)
     com.add_argument("--raiz", default=os.getcwd())
     com.add_argument("--agora")
     com.add_argument("--sistema", choices=["nt", "posix"], default=os.name)
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap = Parser(description=__doc__.split(chr(10))[1])
+    sub = ap.add_subparsers(dest="cmd", required=True, parser_class=Parser)
     sub.add_parser("init", parents=[com]).set_defaults(fn=cmd_init)
     p = sub.add_parser("status", parents=[com])
     p.add_argument("--json", action="store_true")
@@ -249,9 +265,13 @@ def main(argv=None):
     p = sub.add_parser("remove", parents=[com])
     p.add_argument("--projeto", required=True)
     p.set_defaults(fn=cmd_remove)
-    a = ap.parse_args(argv)
-    raiz = os.path.abspath(a.raiz)
     try:
+        a = ap.parse_args(argv)
+        raiz = os.path.abspath(a.raiz)
+        if not os.path.isdir(raiz):
+            raise Refuse("usage", f"the hub root {raiz} must be an existing folder")
+        if a.cmd != "status" and os.path.exists(os.path.join(raiz, ".superpowers", "ledger.jsonl")):
+            raise Refuse("is-project", "this folder is a project (it has a ledger); open the hub in the root folder")
         a.fn(a, raiz, load(raiz))
     except Refuse as e:
         print(e, file=sys.stderr)

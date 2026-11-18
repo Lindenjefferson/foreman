@@ -213,6 +213,87 @@ check("AC_T1_9 project folders are unchanged by every subcommand",
 check("AC_T1_9 the only file written in the root is hub.json",
       sorted(os.listdir(os.path.join(r12, ".superpowers"))) == ["hub.json"], os.listdir(os.path.join(r12, ".superpowers")))
 
+# fix round 1
+def reg_bytes(raiz, text):
+    os.makedirs(os.path.join(raiz, ".superpowers"), exist_ok=True)
+    with open(os.path.join(raiz, ".superpowers", "hub.json"), "wb") as f:
+        f.write(text)
+
+
+f1 = root()
+write(os.path.join(f1, ".superpowers", "ledger.jsonl"), "")
+o1 = os.path.realpath(tempfile.mkdtemp(prefix="hub o "))
+ra = run(f1, "add", "--nome", "o", "--pasta", o1)
+rs = run(f1, "set", "--bg", "on")
+rr = run(f1, "remove", "--projeto", "o")
+check("FIX1 add, set and remove in a project folder are refused and write nothing",
+      all(x.returncode == 1 and "is-project" in out(x) for x in (ra, rs, rr))
+      and not os.path.exists(os.path.join(f1, ".superpowers", "hub.json")), out(ra) + out(rs))
+check("FIX1 status still works in a project folder", run(f1, "status").returncode == 0)
+
+ok = True
+for i, body in enumerate((b'{"projetos":{"x":"oops"}}', b'{"projetos":{"x":{"pasta":5}}}',
+                          b'{"projetos":{"x":{"pasta":["l"]}}}', b'{"projetos":{"x":{"conta":3}}}',
+                          b'{"projetos":{"x":{"abrir":[]}}}', b'{"projetos":[]}', b'[]')):
+    f2 = root()
+    reg_bytes(f2, body)
+    r = run(f2, "status")
+    with open(os.path.join(f2, ".superpowers", "hub.json"), "rb") as fh:
+        same = fh.read() == body
+    good = r.returncode == 2 and "bad-registry" in out(r) and "Traceback" not in out(r) and same
+    ok = ok and good
+    if not good:
+        print("   ", body, r.returncode, out(r))
+check("FIX2 a registry with the wrong shape exits 2 and stays untouched", ok)
+
+f3 = root()
+marker(f3, "S")
+run(f3, "set", "--projeto", "S", "--conta", "old")
+import shutil
+shutil.rmtree(os.path.join(f3, "S"))
+o3 = os.path.realpath(tempfile.mkdtemp(prefix="hub o "))
+r = run(f3, "add", "--nome", "s", "--pasta", o3, "--conta", "new")
+check("FIX3 add refuses a name held by a registry entry without pasta", r.returncode == 1 and "exists" in out(r), out(r))
+d = status(f3)[1]
+check("FIX9 an entry without pasta whose folder vanished is listed with missing-folder", names(d) == ["S"]
+      and "missing-folder" in d["projetos"][0]["avisos"] and d["projetos"][0]["conta"] == "old", d)
+check("FIX9 and remove drops it", run(f3, "remove", "--projeto", "s").returncode == 0 and names(status(f3)[1]) == [])
+
+f4 = root()
+o4 = os.path.realpath(tempfile.mkdtemp(prefix="hub o "))
+ok = True
+for bad in ("x\n", "-n", "..", ".", "_x", ""):
+    r = run(f4, "add", "--nome=" + bad, "--pasta", o4)
+    ok = ok and r.returncode == 1 and "bad-name" in out(r)
+check("FIX4 names with a trailing newline, a leading dash or dot are refused", ok)
+check("FIX4 a normal name with dots and dashes is accepted", run(f4, "add", "--nome", "a.b-c_d", "--pasta", o4).returncode == 0)
+
+f5 = root()
+marker(f5, "p")
+o5 = os.path.realpath(tempfile.mkdtemp(prefix="hub o "))
+run(f5, "add", "--nome", "one", "--pasta", o5)
+ok = True
+for pasta in (o5, os.path.join(o5, "..", os.path.basename(o5)), os.path.join(f5, "p"), f5):
+    r = run(f5, "add", "--nome", "two", "--pasta", pasta)
+    ok = ok and r.returncode == 1 and "exists" in out(r)
+check("FIX5 one folder does not get two names, and the root is not a project", ok)
+
+r = run(f5, "status", "--bogus")
+check("FIX6 an argparse error exits 1 with the usage code", r.returncode == 1 and out(r).startswith("usage"), out(r))
+
+nr = os.path.join(root(), "nope")
+r1_, r2_ = run(nr, "status"), run(nr, "init")
+check("FIX7 a missing --raiz is refused for status and init and nothing is created",
+      r1_.returncode == 1 and r2_.returncode == 1 and "usage" in out(r1_) + out(r2_)
+      and "Traceback" not in out(r1_) + out(r2_) and not os.path.exists(nr), out(r1_) + out(r2_))
+
+f8 = root()
+os.makedirs(os.path.join(f8, "b", ".claude"))
+with open(os.path.join(f8, "b", ".claude", "settings.local.json"), "wb") as fh:
+    fh.write(bytes([0xEF, 0xBB, 0xBF]) + json.dumps({"enabledPlugins": {"foreman@foreman": True}}).encode())
+check("FIX8 a settings file with a BOM is accepted", names(status(f8)[1]) == ["b"])
+
+
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")
 sys.exit(1 if failed else 0)
