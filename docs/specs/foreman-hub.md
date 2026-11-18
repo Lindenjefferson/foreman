@@ -166,9 +166,12 @@ Checagem, não texto: na sessão de hub o `bash-guard.py` nega `git init` e o `p
 | unknown-project | nome fora do registro e da varredura | 1 | lista os nomes |
 | missing-folder | pasta registrada não existe | 1 | a pasta e `remove` |
 | half-update | `atualizar.json` no projeto | 1 | terminar a atualização na sessão do projeto |
-| is-project | `init` numa pasta com ledger | 1 | abrir o hub na pasta-raiz |
+| is-project | comando que escreve o registro numa pasta com ledger | 1 | abrir o hub na pasta-raiz |
+| exists | `add` de nome ou pasta que o hub já conhece | 1 | o nome que já usa a pasta |
+| bad-name | nome fora de `[A-Za-z0-9][A-Za-z0-9._-]*` | 1 | o formato aceito |
+| usage | argumento ausente, inválido ou `--raiz` que não existe | 1 | a linha de uso |
 | open-failed | o comando de abrir saiu com erro | 1 | o comando e a saída |
-| bad-registry | `hub.json` não é JSON | 2 | o caminho; nada foi sobrescrito |
+| bad-registry | `hub.json` não é JSON ou não tem a forma do registro | 2 | o caminho; nada foi sobrescrito |
 
 Negações do guard: "hub session: <comando> belongs to the project's session" e "another hub session took over this root".
 
