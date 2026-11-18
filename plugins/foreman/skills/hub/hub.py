@@ -38,8 +38,8 @@ Rules
 - Project name = folder name, [A-Za-z0-9][A-Za-z0-9._-]* (whole name), compared with casefold(). Another name is ignored, with a warning.
   A registered name wins over the scan; add refuses a name the registry or the scan already has.
 - Registry: <root>/.superpowers/hub.json, written only by this script, atomically (temp file, os.replace).
-  {"abrir": null, "bg": false, "projetos": {"<name>": {"pasta": "<absolute>", "conta": null, "abrir": null}}}
-  "abrir" is a command with {pasta}, {nome} and {conta}; "conta" is a free label. set on a scanned project
+  {"abrir": null, "bg": null, "projetos": {"<name>": {"pasta": "<absolute>", "conta": null, "abrir": null}}}
+  "abrir" is a command with {pasta}, {nome} and {conta}; "conta" is a free label. "bg" null means unset. set on a scanned project
   keeps it "varredura" and stores only what it sets. A registry that is not a JSON object: exit 2, untouched.
 - Never writes inside a project folder; the only file written is the registry.
 
@@ -52,13 +52,16 @@ GIT_TERMINAL_PROMPT removed (unless defined at User or Machine level on Windows)
 else, as an argument list without a shell, `wt.exe -w new -d <pasta> claude --permission-mode auto -n <nome>` on nt
 (PowerShell Start-Process when wt.exe is not in PATH) or `claude --bg --permission-mode auto -n <nome>` when bg is on
 (project, else global) and, on posix with no abrir, as a fallback with a warning. A non-zero exit, a command that is
-not found or the timeout is open-failed, with the command and its output. "bg" in status is that effective value.
+not found or the timeout is open-failed, with the command and its output. With bg off and no abrir, posix refuses.
+Never quote a placeholder in an abrir template ('{pasta}' breaks): hub.py already quotes it, and set/add refuse it. Under
+Git for Windows sh, a value starting with / is rewritten as an MSYS path. wt.exe has `;` as its own separator, so a ;
+in the folder is escaped. Writing commands hold <root>/.superpowers/hub.lock (a lock older than 30 s is taken over). "bg" in status is that effective value.
 
 Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (any command but status, in a
 folder with .superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
 argument or a --raiz that is not a folder), open-failed 1, half-update 1, bad-registry 2 (nothing was overwritten).
 """
-import argparse, datetime, json, os, re, shlex, shutil, subprocess, sys, tempfile
+import argparse, contextlib, datetime, json, os, re, shlex, shutil, subprocess, sys, tempfile, time
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -127,11 +130,50 @@ def save(raiz, dados):
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             json.dump(dados, f, ensure_ascii=False, indent=2)
             f.write("\n")
-        os.replace(tmp, p)
+        for attempt in range(20):  # on Windows a reader holding the file makes the replace fail for a moment
+            try:
+                os.replace(tmp, p)
+                break
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.05)
     except BaseException:
         if os.path.exists(tmp):
             os.remove(tmp)
         raise
+
+
+@contextlib.contextmanager
+def locked(raiz, wait=10, stale=30):
+    """One writer at a time: <root>/.superpowers/hub.lock, created exclusively, retried for ~10 s, removed after."""
+    path = os.path.join(raiz, ".superpowers", "hub.lock")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    end = time.time() + wait
+    while True:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except (FileExistsError, PermissionError):  # Windows says "denied" for a file that is being deleted
+            pass
+        with contextlib.suppress(OSError):
+            if time.time() - os.path.getmtime(path) > stale:  # shortcut: two takers can race, one just retries
+                os.remove(path)
+        if time.time() > end:
+            raise Refuse("busy", "another hub command holds hub.lock; try again")
+        time.sleep(0.05)
+    try:
+        os.close(fd)
+        yield
+    finally:
+        for _ in range(100):  # a waiter's stat can hold the file for a moment on Windows
+            try:
+                os.remove(path)
+                break
+            except FileNotFoundError:
+                break
+            except OSError:
+                time.sleep(0.05)
 
 
 def marked(path, avisos, nome):
@@ -247,9 +289,10 @@ def efetivo_bg(e, dados, sistema):
 
 def utc(t):
     try:
-        return datetime.datetime.fromisoformat(t.replace("Z", "+00:00"))
+        d = datetime.datetime.fromisoformat(t.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
+    return d if d.tzinfo else d.replace(tzinfo=datetime.timezone.utc)  # a naive time is UTC
 
 
 def estado_de(e, pasta, agora):
@@ -291,7 +334,10 @@ def listing(raiz, dados, agora, sistema):
                 entrega = None
             if entrega is False:
                 av, entrega = av + ["ledger unreadable"], None
-            estado, minutos = estado_de(e, pasta, agora)
+            try:
+                estado, minutos = estado_de(e, pasta, agora)
+            except Exception as x:
+                av.append(f"check failed: {type(x).__name__}")
         projetos.append({"nome": clean(n), "pasta": pasta, "conta": e.get("conta"),
                          "bg": efetivo_bg(e, dados, sistema), "origem": origem,
                          "kickoff": os.path.isfile(os.path.join(pasta, "CLAUDE.md")), "avisos": av,
@@ -325,7 +371,7 @@ def cmd_init(a, raiz, dados):
 
 
 def cmd_status(a, raiz, dados):
-    lst = listing(raiz, dados, a.agora, a.sistema)
+    lst = listing(raiz, dados, a.agora or now(), a.sistema)
     if a.json:
         print(json.dumps(lst, ensure_ascii=False, indent=2))
         return
@@ -339,7 +385,7 @@ def cmd_status(a, raiz, dados):
         if p["pedido"]:
             extra += [f"request {p['estado']}: {clean(p['pedido']['texto'])}"]
         if p["estado"] == "sem-resposta":
-            extra += [f"sem resposta ha {p['minutos']} min: the message may be held in the project's window; approve "
+            extra += [f"no answer for {p['minutos']} min: the message may be held in the project's window; approve "
                       "there or send it again"]
         if en:
             extra += [f"delivery {en['slug']}"] + [f"waits: {t}" for t in en["espera"]]
@@ -350,7 +396,13 @@ def cmd_status(a, raiz, dados):
               + "".join(f" | {x}" for x in extra + p["avisos"] + ([] if p["kickoff"] else ["no kickoff"])))
 
 
+def template(abrir):
+    if abrir and ("'{" in abrir or '"{' in abrir):
+        raise Refuse("usage", "do not quote the placeholders in abrir: hub.py quotes {pasta}, {nome} and {conta}")
+
+
 def cmd_add(a, raiz, dados):
+    template(a.abrir)
     if not NAME.fullmatch(a.nome):
         raise Refuse("bad-name", "the name must match [A-Za-z0-9][A-Za-z0-9._-]*")
     todos, _ = known(raiz, dados)
@@ -367,6 +419,7 @@ def cmd_add(a, raiz, dados):
 
 
 def cmd_set(a, raiz, dados):
+    template(a.abrir)
     if a.projeto is None:
         if a.conta is not None:
             raise Refuse("usage", "--conta needs --projeto")
@@ -415,9 +468,7 @@ def pronto(raiz, dados, nome):
 
 def cmd_delegate(a, raiz, dados):
     n, pasta, e = pronto(raiz, dados, a.projeto)
-    texto = sys.stdin.read()
-    if not texto.strip():
-        raise Refuse("usage", "the request text comes on stdin and is empty")
+    texto = a.texto
     e = dados["projetos"].setdefault(find(n, dados["projetos"]) or n, {})
     e["pedido"] = {"texto": texto[:200], "em": a.agora or now()}
     e["estado"] = "nao-entregue" if a.nao_entregue else "enviado"
@@ -462,15 +513,18 @@ def comando(a, n, pasta, e, dados):
         cmd = re.sub(r"\{(pasta|nome|conta)\}", lambda m: shlex.quote(vals[m.group(1)]), abrir)
         return ["sh", "-c", cmd], cmd, None
     flags = ["claude", "--permission-mode", "auto", "-n", n]
-    if efetivo_bg(e, dados, a.sistema) or a.sistema != "nt":
-        warn = None
-        if e.get("bg") is not True and dados.get("bg") is not True:
-            warn = ("warning: no abrir is registered on this system, so the session starts with claude --bg in "
-                    "autonomous mode and nobody sees it; register a window opener with set --abrir")
-        return ["claude", "--bg", "--permission-mode", "auto", "-n", n], None, warn
+    explicit = next((v for v in (e.get("bg"), dados.get("bg")) if v is not None), None)
+    if explicit is True or (a.sistema != "nt" and explicit is None):
+        warn = None if explicit else ("warning: no abrir is registered on this system, so the session starts with "
+                                      "claude --bg in autonomous mode and nobody sees it; register a window opener "
+                                      "with set --abrir")
+        return ["claude", "--bg"] + flags[1:], None, warn
+    if a.sistema != "nt":
+        raise Refuse("open-failed", "no abrir is registered and bg is off, so there is nothing to open the window "
+                                    "with; register one with set --abrir")
     if shutil.which("wt.exe"):
-        return ["wt.exe", "-w", "new", "-d", pasta] + flags, None, None
-    q = lambda t: t.replace("'", "''")
+        return ["wt.exe", "-w", "new", "-d", pasta.replace(";", "\\;")] + flags, None, None  # ; separates wt commands
+    q = lambda t: re.sub("['\u2018\u2019\u201a\u201b]", lambda m: m.group(0) * 2, t)  # all four are quotes to PowerShell
     ps = (f"Start-Process -FilePath claude -ArgumentList '--permission-mode','auto','-n','{q(n)}' "
           f"-WorkingDirectory '{q(pasta)}'")
     return ["powershell", "-NoProfile", "-Command", ps], None, None
@@ -500,7 +554,8 @@ def cmd_abrir(a, raiz, dados):
         sink.seek(0)
         texto = sink.read().decode("utf-8", "replace")
     if code == "timeout":
-        raise Refuse("open-failed", f"{shown}\nthe command did not return the terminal within {OPEN_TIMEOUT} s")
+        raise Refuse("open-failed", f"{shown}\nthe command did not return the terminal within {OPEN_TIMEOUT} s; "
+                                     "whatever it started may still open a window")
     if code != 0:
         raise Refuse("open-failed", f"{shown}\nexit {code}: {clean(texto, 500)}")
     print(f"opened {n}: {shown}")
@@ -557,7 +612,19 @@ def main(argv=None):
             raise Refuse("usage", f"the hub root {raiz} must be an existing folder")
         if a.cmd != "status" and os.path.exists(os.path.join(raiz, ".superpowers", "ledger.jsonl")):
             raise Refuse("is-project", "this folder is a project (it has a ledger); open the hub in the root folder")
-        a.fn(a, raiz, load(raiz))
+        if a.agora and utc(a.agora) is None:
+            raise Refuse("usage", f"--agora {a.agora!r} is not an ISO time")
+        if a.cmd == "delegate":  # read before taking the lock, so a slow writer of stdin never holds it
+            if sys.stdin.isatty():
+                raise Refuse("usage", "the request text comes on stdin, not from a terminal")
+            a.texto = sys.stdin.read(4096)
+            if not a.texto.strip():
+                raise Refuse("usage", "the request text comes on stdin and is empty")
+        if a.cmd in ("init", "add", "set", "remove", "delegate"):
+            with locked(raiz):  # load, change and save as one step
+                a.fn(a, raiz, load(raiz))
+        else:
+            a.fn(a, raiz, load(raiz))
     except Refuse as e:
         print(e, file=sys.stderr)
         return e.exit

@@ -10,7 +10,8 @@ def check(name, ok, detail=""):
 
 
 def run(raiz, *args, stdin="", agora="2030-01-01T00:00:00Z", sistema="posix", env=None):
-    return subprocess.run([sys.executable, HUB, *args, "--raiz", raiz, "--agora", agora, "--sistema", sistema],
+    when = ["--agora", agora] if agora else []  # agora=None leaves it to the real clock
+    return subprocess.run([sys.executable, HUB, *args, "--raiz", raiz, *when, "--sistema", sistema],
                           input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace",
                           cwd=tempfile.gettempdir(), env=env)
 
@@ -676,6 +677,139 @@ reg_bytes(kb, b'{"bg": null, "projetos": {}}')
 gitproj(kb, "a")
 check("LEFT2_d bg null is reported as false", proj(json.loads(run(kb, "status", "--json", sistema="nt").stdout), "a")["bg"]
       is False)
+
+# T3 fix round 1
+f1 = root()
+gitproj(f1, "a")
+run(f1, "delegate", "--projeto", "a", agora="2020-01-01T00:00:00Z", stdin="old")
+d = json.loads(run(f1, "status", "--json", agora=None).stdout)
+check("FIX_T3_1 status without --agora uses the real clock: an old request is sem-resposta",
+      proj(d, "a")["estado"] == "sem-resposta" and proj(d, "a")["minutos"] > 1000, proj(d, "a"))
+check("FIX_T3_10 the text says 'no answer for N min'", "no answer for" in run(f1, "status", agora=None).stdout
+      and "sem resposta" not in run(f1, "status", agora=None).stdout)
+
+f2 = root()
+for i in range(6):
+    gitproj(f2, "p%d" % i)
+bad = 0
+for rnd in range(4):
+    procs = [subprocess.Popen([sys.executable, HUB, "delegate", "--projeto", "p%d" % i, "--raiz", f2, "--agora",
+                               "2030-01-01T00:0%d:00Z" % rnd, "--sistema", "posix"], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for i in range(6)]
+    for pr in procs:
+        o, e_ = pr.communicate("round %d" % rnd)
+        bad += pr.returncode != 0
+        if pr.returncode:
+            print("   ", e_[-200:])
+    got = [proj(status(f2)[1], "p%d" % i)["pedido"] for i in range(6)]
+    bad += sum(1 for g in got if not g or g["texto"] != "round %d" % rnd)
+check("FIX_T3_2 six parallel delegates over four rounds: none lost, every exit 0", bad == 0, bad)
+check("FIX_T3_2 the lock file is gone afterwards", not os.path.exists(os.path.join(f2, ".superpowers", "hub.lock")))
+f2b = root()
+gitproj(f2b, "a")
+os.makedirs(os.path.join(f2b, ".superpowers"))
+lock = os.path.join(f2b, ".superpowers", "hub.lock")
+open(lock, "w").close()
+os.utime(lock, (time.time() - 120, time.time() - 120))
+check("FIX_T3_2 a stale lock is taken over", run(f2b, "delegate", "--projeto", "a", stdin="x").returncode == 0)
+
+curly = "".join(chr(c) for c in (0x2018, 0x2019, 0x201A, 0x201B))
+f3 = root()
+pcurly = os.path.join(f3, "x" + curly + " y")
+os.makedirs(pcurly)
+run(f3, "add", "--nome", "c", "--pasta", pcurly)
+r = run(f3, "abrir", "--projeto", "c", "--mostrar", sistema="nt", env={**os.environ, "PATH": empty})
+doubled = "".join(ch * 2 for ch in curly)
+check("FIX_T3_3 PowerShell's four curly single quotes are doubled in the pasta", "x" + doubled + " y'" in r.stdout, out(r))
+
+f4 = root()
+gitproj(f4, "a")
+check("FIX_T3_4 a naive --agora is accepted as UTC", run(f4, "delegate", "--projeto", "a", agora="2020-01-01T00:00:00",
+                                                         stdin="x").returncode == 0)
+r = run(f4, "status", "--json")
+check("FIX_T3_4 and status still works afterwards", r.returncode == 0 and proj(json.loads(r.stdout), "a")["estado"]
+      == "sem-resposta", out(r))
+r = run(f4, "status", agora="yesterday")
+check("FIX_T3_4 a bad --agora is usage", r.returncode == 1 and out(r).startswith("usage"), out(r))
+reg4 = os.path.join(f4, ".superpowers", "hub.json")
+doc4 = json.load(open(reg4, encoding="utf-8"))
+doc4["projetos"]["a"]["pedido"]["em"] = "not a time"
+json.dump(doc4, open(reg4, "w", encoding="utf-8"))
+gitproj(f4, "b")
+r = run(f4, "status", "--json")
+check("FIX_T3_4 a garbage pedido.em does not break the other projects", r.returncode == 0 and "b" in names(json.loads(r.stdout)),
+      out(r))
+
+f5 = root()
+psemi = os.path.join(f5, "a;b")
+os.makedirs(psemi)
+run(f5, "add", "--nome", "s", "--pasta", psemi)
+r = run(f5, "abrir", "--projeto", "s", "--mostrar", sistema="nt", env={**os.environ, "PATH": fake})
+check("FIX_T3_5 wt.exe: a semicolon in the -d value is escaped", "-d " + os.path.join(f5, "a" + chr(92) + ";b")
+      in r.stdout, out(r))
+
+f6 = root()
+gitproj(f6, "a")
+run(f6, "set", "--bg", "off")
+r = run(f6, "abrir", "--projeto", "a", "--mostrar", sistema="posix")
+check("FIX_T3_6 posix with bg explicitly off and no abrir is open-failed with the set --abrir hint",
+      r.returncode == 1 and out(r).startswith("open-failed") and "set --abrir" in out(r), out(r))
+run(f6, "set", "--bg", "on", "--projeto", "a")
+check("FIX_T3_6 a project-level bg on wins over the global off", run(f6, "abrir", "--projeto", "a", "--mostrar",
+                                                                    sistema="posix").returncode == 0)
+
+f7 = root()
+r1 = run(f7, "set", "--abrir", "x '{pasta}'")
+r2 = run(f7, "set", "--abrir", 'x "{nome}"')
+o7 = os.path.realpath(tempfile.mkdtemp(prefix="hub o "))
+r3 = run(f7, "add", "--nome", "q", "--pasta", o7, "--abrir", "x '{conta}'")
+check("FIX_T3_7 a quoted placeholder in an abrir template is refused as usage", all(
+      x.returncode == 1 and out(x).startswith("usage") for x in (r1, r2, r3)), out(r1) + out(r2) + out(r3))
+check("FIX_T3_7 an unquoted placeholder is accepted", run(f7, "set", "--abrir", "x {pasta}").returncode == 0)
+
+
+class Tty(io.StringIO):
+    reads = []
+
+    def isatty(self):
+        return True
+
+    def read(self, n=-1):
+        Tty.reads.append(n)
+        return super().read(n)
+
+
+f9 = root()
+gitproj(f9, "a")
+old_in = sys.stdin
+sys.stdin = Tty("typed")
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    rc = hub.main(["delegate", "--projeto", "a", "--raiz", f9, "--sistema", "posix"])
+sys.stdin = old_in
+check("FIX_T3_9 delegate from a terminal is usage and does not read", rc == 1 and err.getvalue().startswith("usage")
+      and Tty.reads == [], err.getvalue())
+
+
+class Pipe(Tty):
+    def isatty(self):
+        return False
+
+
+sys.stdin = Pipe("z" * 9000)
+Pipe.reads = []
+with contextlib.redirect_stderr(io.StringIO()):
+    hub.main(["delegate", "--projeto", "a", "--raiz", f9, "--sistema", "posix"])
+sys.stdin = old_in
+check("FIX_T3_9 delegate reads at most 4096 characters", Tty.reads == [4096], Tty.reads)
+
+hub.OPEN_TIMEOUT = 1
+run(h6, "set", "--abrir", "'" + sys.executable + "' -c 'import time; time.sleep(5)'")
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    hub.main(["abrir", "--projeto", "a", "--raiz", h6, "--sistema", "posix"])
+check("FIX_T3_11 the timeout message says the command may still open a window", "may still" in err.getvalue(),
+      err.getvalue())
 
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")
