@@ -12,8 +12,8 @@ Commands
   remove  --projeto <n>                                       drops a registry entry
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
---sistema nt|posix (default: os.name; the tests pass the last two). Every command rescans the root first, and the
-root must be an existing folder. A relative --pasta resolves against the current directory.
+--sistema nt|posix (default: os.name; the tests pass the last two). Every command except init and a global set
+rescans the root first, and the root must be an existing folder. A relative --pasta resolves against the current directory.
 Exit 0 ok; 1 refusal, the error code first on the message; 2 bad-registry.
 
 status runs `ledger.py status --json` (this plugin's own, 30 s timeout) in each project folder that has a ledger:
@@ -21,7 +21,10 @@ status runs `ledger.py status --json` (this plugin's own, 30 s timeout) in each 
 is left (tarefas, ciclos). A ledger that fails or is not JSON gives the warning "ledger unreadable" and
 "entrega": null; the other projects are unaffected. A project that waits for the owner comes first. Warnings:
 half-update (.superpowers/atualizar.json), "version X (hub Y)" when the project's `git config foreman.home` holds
-another plugin version than this hub's plugin.json (none without foreman.home or a git repository), missing-folder.
+another plugin version than this hub's plugin.json (none without foreman.home or a .git of its own), missing-folder.
+ledger.py runs with --ledger on the project's own file and FOREMAN_CAPACITY_DISK_GB=unknown, so it never writes in the
+project (its disk watch would). The timeout kills only ledger.py; a grandchild holding the pipe can delay it. Text from
+a project (slug, ask sentences, names) is collapsed to one line of at most 200 characters.
 
 Rules
 -----
@@ -60,6 +63,27 @@ def reg_path(raiz):
     return os.path.join(raiz, ".superpowers", "hub.json")
 
 
+def valid(d):
+    """The shape of hub.json: abrir a string, bg a bool, projetos a dict of dicts with string pasta, conta, abrir."""
+    if not isinstance(d, dict) or not isinstance(d.get("projetos", {}), dict):
+        return False
+    if not (d.get("abrir") is None or isinstance(d["abrir"], str)):
+        return False
+    if not (d.get("bg") is None or isinstance(d["bg"], bool)):
+        return False
+    for e in d.get("projetos", {}).values():
+        if not isinstance(e, dict) or not (e.get("bg") is None or isinstance(e["bg"], bool)):
+            return False
+        if not all(isinstance(e[k], str) for k in ("pasta", "conta", "abrir") if e.get(k) is not None):
+            return False
+    return True
+
+
+def clean(x):
+    """Text that comes from a project, safe for the hub's context: one line, at most 200 characters."""
+    return " ".join(str(x).split())[:200]
+
+
 def load(raiz):
     p = reg_path(raiz)
     if not os.path.exists(p):
@@ -67,11 +91,7 @@ def load(raiz):
     try:
         with open(p, encoding="utf-8") as f:
             d = json.load(f)
-        pr = d.get("projetos", {}) if isinstance(d, dict) else None
-        if not isinstance(d, dict) or not (d.get("abrir") is None or isinstance(d["abrir"], str)) \
-                or not (d.get("bg") is None or isinstance(d["bg"], bool)) or not isinstance(pr, dict) or not all(isinstance(e, dict) and all(
-                isinstance(e[k], str) for k in ("pasta", "conta", "abrir") if e.get(k) is not None)
-                for e in pr.values()):
+        if not valid(d):
             raise ValueError("wrong shape")
     except (ValueError, OSError):
         raise Refuse("bad-registry", f"{p} is not a valid hub registry; nothing was overwritten", 2)
@@ -152,16 +172,20 @@ def entrega_de(pasta):
     """The delivery from `ledger.py status --json` run in the project: None without a ledger, False if unreadable."""
     if not os.path.isfile(os.path.join(pasta, ".superpowers", "ledger.jsonl")):
         return None
+    # FOREMAN_CAPACITY_DISK_GB=unknown: ledger.py then skips its disk watch, which would write disk.json here
+    env = {**os.environ, "FOREMAN_CAPACITY_DISK_GB": "unknown"}
+    own = os.path.join(pasta, ".superpowers", "ledger.jsonl")  # never a parent repo's ledger
     try:
-        r = subprocess.run([sys.executable, LEDGER, "status", "--json"], cwd=pasta, capture_output=True, text=True,
-                           encoding="utf-8", errors="replace", timeout=TIMEOUT)
+        r = subprocess.run([sys.executable, LEDGER, "--ledger", own, "status", "--json"], cwd=pasta, env=env,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=TIMEOUT)
         d = json.loads(r.stdout)
         if r.returncode != 0 or not isinstance(d, dict):
             return False
         sc = d.get("scope") or {}
-        return {"slug": d["slug"], "autonomo": bool(d.get("autonomous")), "pausada": bool(d.get("paused")),
-                "espera": [f"{x.get('task', 'step')} review still fails after {x.get('rounds')} rounds: ask the user"
-                           for x in d.get("steps", []) if x.get("step") == "ask"],
+        asks = [clean(t) for t in d.get("pending", []) if str(t).endswith(": ask the user")]
+        waits = any(x.get("step") == "ask" for x in d.get("steps", []))
+        return {"slug": clean(d["slug"]), "autonomo": bool(d.get("autonomous")), "pausada": bool(d.get("paused")),
+                "espera": (asks or ["ask the user"]) if waits else [],
                 "validar": sum(1 for v in d.get("validar", []) if v.get("decision") is None),
                 "faltam": {"tarefas": sc.get("tasks_left", 0), "ciclos": sc.get("cycles_left", 0)}}
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError):
@@ -181,15 +205,18 @@ def avisos_de(pasta):
     av = []
     if os.path.exists(os.path.join(pasta, ".superpowers", "atualizar.json")):
         av.append("half-update")
-    try:
-        home = subprocess.run(["git", "-C", pasta, "config", "--local", "--get", "foreman.home"],
-                              capture_output=True, text=True, encoding="utf-8", timeout=TIMEOUT).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        home = ""
+    home = ""
+    if os.path.exists(os.path.join(pasta, ".git")):  # a project inside another repo has no foreman.home of its own
+        try:
+            home = subprocess.run(["git", "-C", pasta, "config", "--local", "--get", "foreman.home"],
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                  timeout=TIMEOUT).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            home = ""
     theirs = versao(os.path.join(home, ".claude-plugin", "plugin.json")) if home else None
     mine = versao(os.path.join(PLUGIN, ".claude-plugin", "plugin.json"))
     if theirs and mine and theirs != mine:
-        av.append(f"version {theirs} (hub {mine})")
+        av.append(clean(f"version {theirs} (hub {mine})"))
     return av
 
 
@@ -201,10 +228,13 @@ def listing(raiz, dados):
         e = dados["projetos"].get(find(n, dados["projetos"]) or n, {})
         av, entrega = ["missing-folder"], None
         if os.path.isdir(pasta):
-            av, entrega = avisos_de(pasta), entrega_de(pasta)
+            try:
+                av, entrega = avisos_de(pasta), entrega_de(pasta)
+            except Exception:  # whatever one project does, the others are still listed
+                av, entrega = ["check failed"], False
             if entrega is False:
                 av, entrega = av + ["ledger unreadable"], None
-        projetos.append({"nome": n, "pasta": pasta, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
+        projetos.append({"nome": clean(n), "pasta": pasta, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
                          "origem": origem, "kickoff": os.path.isfile(os.path.join(pasta, "CLAUDE.md")),
                          "avisos": av, "entrega": entrega, "pedido": e.get("pedido"), "estado": e.get("estado"),
                          "minutos": None})
@@ -214,7 +244,7 @@ def listing(raiz, dados):
                              "origem": "varredura", "kickoff": False, "avisos": ["missing-folder"], "entrega": None,
                              "pedido": e.get("pedido"), "estado": e.get("estado"), "minutos": None})
     projetos.sort(key=lambda p: not (p["entrega"] or {}).get("espera"))  # stable: what waits for the owner first
-    return {"raiz": raiz, "dono": dados.get("dono"), "avisos": avisos, "projetos": projetos}
+    return {"raiz": raiz, "dono": dados.get("dono"), "avisos": [clean(w) for w in avisos], "projetos": projetos}
 
 
 def cmd_init(a, raiz, dados):
@@ -242,13 +272,13 @@ def cmd_status(a, raiz, dados):
         print(f"No projects with the plugin under {raiz}. In a project folder, run: {INSTALL}")
     for p in lst["projetos"]:
         en = p["entrega"]
-        extra = [f"conta {p['conta']}"] if p["conta"] else []
+        extra = [f"conta {clean(p['conta'])}"] if p["conta"] else []
         if en:
             extra += [f"delivery {en['slug']}"] + [f"waits: {t}" for t in en["espera"]]
             extra += (["autonomous"] if en["autonomo"] else []) + (["paused"] if en["pausada"] else [])
             extra += [f"{en['validar']} VALIDAR open"] if en["validar"] else []
             extra += [f"{en['faltam']['tarefas']} tasks, {en['faltam']['ciclos']} cycles left"]
-        print(f"{p['nome']} [{p['origem']}] {p['pasta'] or '(gone)'}" + "".join(f" | {x}" for x in extra + p["avisos"]
+        print(f"{p['nome']} [{p['origem']}] {clean(p['pasta']) if p['pasta'] else '(gone)'}" + "".join(f" | {x}" for x in extra + p["avisos"]
               + ([] if p["kickoff"] else ["no kickoff"])))
 
 
