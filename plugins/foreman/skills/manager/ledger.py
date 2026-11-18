@@ -86,7 +86,8 @@ gives full_qa_blockers, each missing item (the reviewer's PASS after the latest 
 after its head that the gate's Reviewed check asks a review for, the plan and docs/lessons.md exempt as there; the
 version, as the gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the
 cleanup task, or a note that names cleanup; each deferred item with no decision), and add --full is refused while it
-lists any. A ledger whose last cycle ran qa --full under an earlier version still reads: that run is full_qa, as any other.
+lists any. A ledger whose last cycle ran qa --full under an earlier version still reads: that run is full_qa, as any
+other.
 
 Cycles and fix rounds
 ---------------------
