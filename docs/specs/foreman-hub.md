@@ -170,6 +170,7 @@ Checagem, não texto: na sessão de hub o `bash-guard.py` nega `git init` e o `p
 | exists | `add` de nome ou pasta que o hub já conhece | 1 | o nome que já usa a pasta |
 | bad-name | nome fora de `[A-Za-z0-9][A-Za-z0-9._-]*` | 1 | o formato aceito |
 | usage | argumento ausente, inválido ou `--raiz` que não existe | 1 | a linha de uso |
+| busy | outro comando do hub segura o registro há mais de 10 s | 1 | tentar de novo |
 | open-failed | o comando de abrir saiu com erro | 1 | o comando e a saída |
 | bad-registry | `hub.json` não é JSON ou não tem a forma do registro | 2 | o caminho; nada foi sobrescrito |
 
