@@ -161,15 +161,35 @@ def asks(command, cwd=None):
 for command in ("git push origin main", "git push", "git push origin HEAD:main", "git push --all",
                 "git switch -q main && git push"):
     check(f"supervised: a push to the main branch asks the user {command!r}", asks(command), str(run(repo, command)))
-for command in ("git push origin feat/x", "git push -u origin feat/x:feat/x", "git push --tags", "gh pr merge 20",
-                "git merge feat/x"):
+pr_merges = ("gh pr merge 12", "gh pr merge --squash 12", "glab mr merge 3", "glab mr accept 3",
+             "gh api repos/o/r/pulls/12/merge -X PUT")
+for command in ("git merge feat/x", "git merge --no-ff feat/x", "git switch -q feat/y && git checkout main && "
+                "git merge feat/x") + pr_merges:
+    check(f"supervised: a merge into the main branch asks the user {command!r}", asks(command),
+          str(run(repo, command)))
+check("supervised: the merge ask names approval 2", "approval 2" in (run(repo, "git merge feat/x")[1] or ("", ""))[1])
+check("supervised: in PowerShell too", (run(repo, "gh pr merge 12", tool="PowerShell")[1] or ("",))[0] == "ask")
+check("supervised: in the background too", (run(repo, "git merge feat/x", background=True)[1] or ("",))[0] == "ask")
+for command in ("git push origin feat/x", "git push -u origin feat/x:feat/x", "git push --tags", "gh pr view 12",
+                "gh pr create --fill", "git merge --abort", "git merge --quit", "git switch -q feat/y && git merge feat/x"):
     check(f"supervised: passes {command!r}", run(repo, command)[1] is None, str(run(repo, command)))
 loose = tempfile.mkdtemp(prefix="noledger_")
 for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t"),
              ("commit", "-q", "--allow-empty", "-m", "base")):
     subprocess.run(["git", *args], cwd=loose, check=True, capture_output=True)
 check("with no ledger, a push to the main branch asks too", asks("git push origin main", loose))
+for command in ("git merge feat/x",) + pr_merges:
+    check(f"with no ledger, a merge into the main branch asks too {command!r}", asks(command, loose))
 check("with no ledger, a push of a work branch passes", run(loose, "git push origin feat/y")[1] is None)
+with open(os.path.join(loose, "CLAUDE.md"), "w", encoding="utf-8", newline="\n") as handle:
+    handle.write("# P\n\n## Comandos\n\n- Rodar em desenvolvimento: `npm run dev`\n- Testes: `npm test`\n")
+for command in ("git merge feat/x && timeout 10 npm test", "git merge feat/x && npm run dev",
+                "git push origin main && npm run dev"):
+    check(f"a denial wins over the main-branch ask {command!r}", (run(loose, command)[1] or ("",))[0] == "deny",
+          str(run(loose, command)))
+check("in the background, the main-branch ask still comes",
+      (run(loose, "git merge feat/x && npm run dev", background=True)[1] or ("",))[0] == "ask")
+os.remove(os.path.join(loose, "CLAUDE.md"))
 
 
 def relative_cd(command, tool="Bash"):
@@ -189,7 +209,8 @@ for command in ("cd /c/p/proj && git merge feat/x", "cd C:/p/proj; git commit -m
                 "git merge task-1; cd ..", 'git commit -m "cd .. first"', "cd $HOME && git commit -m x",
                 'cd "$ROOT" && git merge x', "(cd sub && make); git commit -m x", "x=$(cd sub && pwd); git commit",
                 "cd sub && cd /c/p && git commit -m x", "cd sub && git -C /c/p commit -m x"):
-    check(f"a delivery: passes {command!r}", run(repo, command)[1] is None, str(run(repo, command)))
+    # on the main branch here, a merge asks for approval 2: what this checks is that the cd is not denied
+    check(f"a delivery: passes {command!r}", (run(repo, command)[1] or ("ask",))[0] == "ask", str(run(repo, command)))
 check("with no ledger, a relative cd before a commit passes", run(loose, "cd .. && git commit -m x")[1] is None)
 
 

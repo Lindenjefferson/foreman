@@ -546,7 +546,7 @@ def merges_pull_request(arguments):
 
 def reaches_main(command, cwd, powershell=False):
     """Returns "deny" in autonomous mode when the command merges into or pushes the default branch, or merges a pull
-    request; "ask" otherwise (supervised, or no ledger) when it pushes the default branch; None when neither. A git
+    request; "ask" for the same commands otherwise (supervised, or no ledger); None when neither. A git
     checkout or switch earlier in the same command counts as the branch checked out for what follows it."""
     calls = []
     for program, arguments, _ in simple_commands(command, powershell):
@@ -565,6 +565,8 @@ def reaches_main(command, cwd, powershell=False):
     published = set()
     for program, name, rest in calls:
         if program != "git":
+            if merges_pull_request(rest) and not autonomous:
+                return "ask"
             if autonomous and merges_pull_request(rest) and not gated(cwd, "HEAD", state):
                 return "deny"
         elif name in ("checkout", "switch"):
@@ -575,7 +577,9 @@ def reaches_main(command, cwd, powershell=False):
             sources = push_sources(rest, main, current)
             if sources is None or not all(source in published or gated(cwd, source, state) for source in sources):
                 return "deny"
-        elif autonomous and main and name == "merge" and current == main and not {"--abort", "--quit"} & set(rest):
+        elif main and name == "merge" and current == main and not {"--abort", "--quit"} & set(rest):
+            if not autonomous:
+                return "ask"
             if not gated(cwd, merged_ref(rest), state):
                 return "deny"
             published.add(main)
@@ -723,11 +727,6 @@ def main():
         return
     skips = skips_hook(command, powershell)
     publishes = None if skips else reaches_main(command, cwd, powershell)
-    if publishes == "ask":
-        json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                                          "permissionDecisionReason": "This pushes the main branch: approval 2 is "
-                                          "the user's."}}, sys.stdout)
-        return
     if skips:
         reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n or a core.hooksPath override), and a "
                   "secret committed stays in the history. Commit without it; if the hook blocks, fix what it reports "
@@ -750,14 +749,19 @@ def main():
                   "the tool's run_in_background set to true, its output in a log of its own, and read the log when "
                   "it finishes.")
     elif tool_input.get("run_in_background"):
-        return
+        reason = None
     else:
         dev = dev_command(commands(cwd))
-        if not dev or not runs_it(command, dev, powershell):
-            return
-        reason = (f"`{dev}` is this project's dev server and never returns, so in the foreground it hangs the call and "
+        reason = None if not dev or not runs_it(command, dev, powershell) else (f"`{dev}` is this project's dev server and never returns, so in the foreground it hangs the call and "
                   "leaves an orphan process. Run the same command with the tool's run_in_background set to true "
                   "(and stop it before you finish), or reuse a server already running for this directory.")
+    if reason is None:
+        if publishes == "ask":  # only when nothing above denies: a denial wins over the ask
+            json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
+                                              "permissionDecisionReason": "This reaches the main branch (a push, a "
+                                              "merge into it or a pull request merge): approval 2 is the user's."}},
+                      sys.stdout)
+        return
     json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                       "permissionDecisionReason": reason}}, sys.stdout)
 

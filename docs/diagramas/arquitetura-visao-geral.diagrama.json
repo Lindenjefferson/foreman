@@ -1041,7 +1041,7 @@
       "title": "Barreiras",
       "items": [
         "pre-commit barra segredo, dado pessoal e termos do dono",
-        "bash-guard nega pular o hook e a branch principal no modo autônomo"
+        "bash-guard nega pular o hook e a branch principal no modo autônomo; no supervisionado, pergunta antes do push e do merge nela"
       ]
     },
     {
