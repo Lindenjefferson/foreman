@@ -716,6 +716,29 @@ check("FIX2_5_T5 git -c alias.* names the alias, not the secret scan",
 check("FIX2_5_T5 --no-verify keeps the secret-scan reason",
       "secret-scan" in (run(bare, "git commit -n -m x")[1] or ("", ""))[1])
 
+# Final review I1: a stray hub.json inside a project under the hub root does not hide the real hub
+hub_json(json.dumps({"abrir": None, "bg": None, "projetos": {}, "dono": "h2", "sessoes": ["h1", "h2"]}))
+stray = os.path.join(hub_root, "proj", ".superpowers")
+os.makedirs(stray, exist_ok=True)
+for label, text, beside in (("unlisted", json.dumps({"projetos": {}, "dono": "x9", "sessoes": ["x9"]}), False),
+                            ("invalid", "{broken", False),
+                            ("beside a ledger", json.dumps({"projetos": {}, "dono": "h2", "sessoes": ["h2"]}), True)):
+    with open(os.path.join(stray, "hub.json"), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    if beside:
+        open(os.path.join(stray, "ledger.jsonl"), "w").close()
+    for command in ("git commit -m x", f"{PY}/manager/ledger.py approve"):
+        check(f"FINAL_I1 a {label} hub.json in a project under the hub: still denied {command!r}",
+              hub_denied(command, cwd=os.path.join(hub_root, "proj")),
+              str(run(os.path.join(hub_root, "proj"), command, session="h2")))
+    for name in ("hub.json", "ledger.jsonl"):
+        if os.path.exists(os.path.join(stray, name)):
+            os.remove(os.path.join(stray, name))
+# Final review M1: a hub session does not merge a pull request
+for command in ("gh pr merge 3 --merge", "glab mr merge 3"):
+    check(f"FINAL_M1 a hub session cannot merge a pull request: {command!r}", hub_denied(command),
+          str(run(hub_root, command, session="h2")))
+
 config = json.load(open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8"))
 pre = config["hooks"]["PreToolUse"]
 check("hooks.json registers bash-guard.py for Bash and PowerShell",

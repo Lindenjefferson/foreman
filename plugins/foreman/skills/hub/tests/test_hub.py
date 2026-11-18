@@ -937,6 +937,13 @@ rb = run(c6, "claim", "--sessao=a b", "--espera", "0.2")
 check("T5 a bad --sessao is usage before the lock is waited for", out(rb).startswith("usage"), out(rb))
 os.remove(lk7)
 
+# Final review M2: an abbreviated option is refused, not read as another (--rai is not --raiz)
+ab = root()
+r = subprocess.run([sys.executable, HUB, "status", "--rai", ab, "--sistema", "posix"], capture_output=True, text=True,
+                   encoding="utf-8", errors="replace", cwd=tempfile.gettempdir())
+check("FINAL_M2 --rai is refused as an unknown option, not taken as --raiz", r.returncode != 0
+      and "--rai" in r.stderr and not os.path.exists(os.path.join(ab, ".superpowers")), r.stdout + r.stderr)
+
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")
 sys.exit(1 if failed else 0)

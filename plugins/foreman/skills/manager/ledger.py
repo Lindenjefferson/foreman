@@ -81,13 +81,14 @@ interface" command on at least one path. When the CLAUDE.md at the ledger's root
 _(...)_ placeholder), the first cycle closes only once one of its qa runs has --interface or --full: a machine that
 cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
 
-The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: status --json
-gives full_qa_blockers, each missing item (the reviewer's PASS after the latest dev run, a waiver included; a commit
-after its head that the gate's Reviewed check asks a review for, the plan and docs/lessons.md exempt as there; the
-version, as the gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the
-cleanup task, or a note that names cleanup; each deferred item with no decision), and add --full is refused while it
-lists any. A ledger whose last cycle ran qa --full under an earlier version still reads: that run is full_qa, as any
-other.
+The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: once the
+plan has no cycle left (or with no scope), status gives full_qa_blockers, each missing item (the reviewer's PASS
+after the latest dev run, a waiver included; a commit after its head that the gate's Reviewed check asks a review
+for, the plan and docs/lessons.md exempt as there; the version, as the gate's Version check reads the Versão line at
+the ledger's root against the base; with a plan, the cleanup task, or a note that names cleanup; each deferred item
+with no decision, which the printed line leaves out since status lists them), and add --full is refused, at any
+point, while any is missing. A ledger whose last cycle ran qa --full under an earlier version still reads: that run
+is full_qa, as any other.
 
 Cycles and fix rounds
 ---------------------
@@ -2308,7 +2309,8 @@ def status(args):
     report["approval"] = standing(args.ledger)
     report["heartbeat"] = heartbeat(entries, auto)
     report["after_full_qa"] = after_full(report["full_qa"], args.ledger)
-    report["full_qa_blockers"] = full_qa_blockers(entries, args.ledger)
+    left = (report["scope"] or {}).get("cycles_left")  # mid-delivery the list is noise; add --full still checks it
+    report["full_qa_blockers"] = [] if left else full_qa_blockers(entries, args.ledger)
     report["gates"] = [{"verdict": entry["verdict"], "failed": entry.get("failed", []), "at": entry.get("at")}
                        for entry in entries if entry["type"] == "gate"]
     if args.json:
@@ -2352,9 +2354,9 @@ def status(args):
             print(f"after the full qa at {report['full_qa']['head'][:7]}: {', '.join(report['after_full_qa'])} "
                   "changed, so the gate's Full suite asks for the full qa again: defer a Minor of the final qa "
                   "instead of fixing it after it")
-        if report["full_qa_blockers"]:
-            print("before the full qa, which the delivery runs once, at its final head: "
-                  + "; ".join(report["full_qa_blockers"]))
+        shown = [item for item in report["full_qa_blockers"] if not item.startswith("deferred ")]
+        if shown:
+            print("before the full qa, which the delivery runs once, at its final head: " + "; ".join(shown))
         unfilled = report["settings"]["unfilled"]
         if unfilled:
             print("settings: unfilled, " + "; ".join(

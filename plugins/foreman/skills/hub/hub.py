@@ -502,10 +502,9 @@ def pronto(raiz, dados, nome):
 
 
 def cmd_delegate(a, raiz, dados):
-    n, pasta, e = pronto(raiz, dados, a.projeto)
-    texto = a.texto
+    n = pronto(raiz, dados, a.projeto)[0]
     e = dados["projetos"].setdefault(find(n, dados["projetos"]) or n, {})
-    e["pedido"] = {"texto": texto[:200], "em": a.agora or now()}
+    e["pedido"] = {"texto": a.texto[:200], "em": a.agora or now()}
     e["estado"] = "nao-entregue" if a.nao_entregue else "enviado"
     save(raiz, dados)  # the text is only stored, never run
 
@@ -597,6 +596,9 @@ def cmd_abrir(a, raiz, dados):
 
 
 class Parser(argparse.ArgumentParser):
+    def __init__(self, *args, **kwargs):  # an abbreviation is refused, so --rai is never read as --raiz
+        super().__init__(*args, allow_abbrev=False, **kwargs)
+
     def error(self, message):  # exit 2 is reserved for bad-registry
         self.print_usage(sys.stderr)
         raise Refuse("usage", message)

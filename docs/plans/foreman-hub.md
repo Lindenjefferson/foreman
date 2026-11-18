@@ -285,6 +285,7 @@ Decisões tomadas em nome do dono, com a opção recomendada. **Confirmadas pelo
 - **Archify no gate do plugin:** fica fora; o Archify não é dependência do foreman. Recomendado: só a prática deste repositório (diagrama conferido antes de cada commit).
 - **Autoavaliação contra as boas práticas do vault:** quatro lacunas para o roadmap (teto de rodadas no modo autônomo, etiqueta "pre-existing" no relatório do `reviewer`, modelo de PR com Testing/Risk/How to revert, critério "a doc diz o que o código faz?" no `reviewer`). Recomendado: entram como "Não triadas" para passar pelo filtro.
 - **T1 a T7 não começaram:** a noite cobriu o pedido (spikes, T8, revisões do Fable). O plano do hub ainda não teve a aprovação 1, e construir um componente novo de esforço G sem ela iria contra "não executar o que não se entendeu". Recomendado: o dono aprova o plano (ou corrige) e a T1 começa na volta.
+- **Revisão final, hook sem o status do hub** (decisão do dono): o `session-start.py` só imprime a linha do hub e faz o `claim`; não roda mais o `hub.py status`, que a skill `hub` roda no primeiro passo. O AC-T4-1 e as linhas da spec que dizem que o hook imprime o status valem sem essa parte.
 
 ## VALIDAR (execução de T1 a T7)
 

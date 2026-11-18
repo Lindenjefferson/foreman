@@ -126,7 +126,8 @@ check("atualizar: with a ledger, the ledger output comes first and unchanged, th
       r.stdout == "Delivery ledger (resumed session), `ledger.py status`:\n" + upd_status + want + "\n",
       r.stdout + r.stderr)
 
-# A folder with .superpowers/hub.json is a foreman hub: the hook claims it and prints the hub status.
+# A folder with .superpowers/hub.json is a foreman hub: the hook claims it and prints one hub line, not the status
+# (the hub skill runs hub.py status in its first step).
 hubdir = tempfile.mkdtemp(prefix="sessionstart_hub_")
 REG = os.path.join(hubdir, ".superpowers", "hub.json")
 os.makedirs(os.path.dirname(REG))
@@ -153,11 +154,11 @@ def read_reg():
 reg()
 r = hub("startup")
 first = r.stdout.splitlines()[0] if r.stdout else ""
-check("hub: startup opens with the hub line and then the status", r.returncode == 0 and "hub" in first
-      and "kickoff" in first and "No projects with the plugin" in r.stdout and r.stderr == "", r.stdout + r.stderr)
+check("hub: startup prints the hub line and not the hub status", r.returncode == 0 and "hub" in first
+      and "kickoff" in first and "No projects with the plugin" not in r.stdout and r.stderr == "", r.stdout + r.stderr)
 check("hub: startup makes the session the owner", read_reg().get("dono") == "s1", str(read_reg()))
 r = hub("compact", "s9")
-check("hub: compact prints the status and keeps the owner", "No projects with the plugin" in r.stdout
+check("hub: compact prints the hub line and keeps the owner", "foreman hub" in r.stdout
       and read_reg()["dono"] == "s1", r.stdout + str(read_reg()))
 hub("resume", "s2")
 check("hub: resume takes over", read_reg()["dono"] == "s2" and read_reg()["sessoes"] == ["s1", "s2"], str(read_reg()))
@@ -167,7 +168,7 @@ check("hub: seven sessions keep the last five", read_reg()["sessoes"] == ["s3", 
 before = open(REG, "rb").read()
 r = hub("startup", sid=None)
 check("hub: no session_id leaves the file alone and still prints", r.returncode == 0 and open(REG, "rb").read() == before
-      and "No projects with the plugin" in r.stdout, r.stdout + r.stderr)
+      and "foreman hub" in r.stdout, r.stdout + r.stderr)
 reg("{broken")
 r = hub("startup", "s8")
 check("hub: invalid hub.json exits 0, untouched, no traceback", r.returncode == 0 and open(REG, "rb").read() == b"{broken"
@@ -186,7 +187,7 @@ open(os.path.join(hubdir, ".superpowers", "hub.lock"), "w").close()
 t0 = time.time()
 r = hub("startup", "s20")
 check("hub: a held lock keeps the hook under its 10 s and prints the hub line", time.time() - t0 < 8
-      and r.returncode == 0 and "foreman hub" in r.stdout and "No projects" in r.stdout, f"{time.time() - t0} {r.stdout}{r.stderr}")
+      and r.returncode == 0 and "foreman hub" in r.stdout, f"{time.time() - t0} {r.stdout}{r.stderr}")
 check("hub: a failed claim is named after the hub line", r.stdout.splitlines()[1].startswith("busy"), r.stdout)
 os.remove(os.path.join(hubdir, ".superpowers", "hub.lock"))
 reg()
@@ -199,7 +200,7 @@ check("hub: an id starting with - is the id, not an option", read_reg().get("don
 rel = subprocess.run([sys.executable, SCRIPT], cwd=os.path.dirname(hubdir), input=json.dumps(
     {"source": "startup", "cwd": os.path.basename(hubdir), "session_id": "rel1"}), capture_output=True, text=True,
     encoding="utf-8")
-check("hub: a relative cwd works", read_reg().get("dono") == "rel1" and "No projects" in rel.stdout, rel.stdout + rel.stderr)
+check("hub: a relative cwd works", read_reg().get("dono") == "rel1" and "foreman hub" in rel.stdout, rel.stdout + rel.stderr)
 reg()
 SLOW_CLAIM = f"""
 import importlib.util, subprocess
@@ -217,8 +218,8 @@ module.main()
 r = subprocess.run([sys.executable, "-c", SLOW_CLAIM], input=json.dumps({"source": "startup", "cwd": hubdir,
                    "session_id": "slow1"}), capture_output=True, text=True, encoding="utf-8", errors="replace")
 lines = r.stdout.splitlines()
-check("hub: a claim that times out says so in one line, then the status follows", len(lines) > 2
-      and "claim" in lines[1] and "did not finish" in lines[1] and "No projects" in r.stdout, r.stdout + r.stderr)
+check("hub: a claim that times out says so in one line, and nothing follows", len(lines) == 2
+      and "claim" in lines[1] and "did not finish" in lines[1], r.stdout + r.stderr)
 proj_hub = tempfile.mkdtemp(prefix="sessionstart_projhub_")
 os.makedirs(os.path.join(proj_hub, ".superpowers"))
 open(os.path.join(proj_hub, ".superpowers", "hub.json"), "w").write(EMPTY)

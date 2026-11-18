@@ -18,11 +18,11 @@ version (plugin.json) equal to `to` says to finish the update with the atualizar
 A folder with .superpowers/hub.json (the payload's cwd itself) is a foreman hub, not a project, unless it also has
 .superpowers/ledger.jsonl: then the project wins, one line says that hub.json is ignored and the output is the normal one.
 In a hub the hook prints at once one line saying that the folder is a hub and that kickoff does not run in it. On
-startup, resume and clear (not compact) with a session_id it runs `hub.py claim` (this plugin's own; 3 s, lock wait 1.5 s),
-which makes the session the owner of the hub, and prints claim's first error line if it fails (on a timeout, one
-line saying the claim did not finish). Then it prints
-`hub.py status` (5 s; on a timeout, one line saying so), all well inside the 10 s the hook has. A broken hub.json, a
-missing session_id, a failing or slow hub.py leave the file untouched and print at most those lines.
+startup, resume and clear (not compact) with a session_id it runs `hub.py claim` (this plugin's own; 3 s, lock wait
+1.5 s, inside the 10 s the hook has), which makes the session the owner of the hub, and prints claim's first error
+line if it fails (on a timeout, one line saying the claim did not finish). It does not print `hub.py status`: the
+hub skill runs it in its first step. A broken hub.json, a missing session_id, a failing or slow hub.py leave the
+file untouched and print at most those lines.
 Without a ledger or a git repository it does nothing; any failure exits 0,
 so a session never breaks."""
 import json
@@ -116,14 +116,12 @@ def hub_status(payload, project):
         return
     print("This folder is a foreman hub (.superpowers/hub.json), not a project: kickoff does not run in it.", flush=True)
 
-    def hub(*args, timeout):
-        return subprocess.run([sys.executable, HUB, *args, "--raiz", project], cwd=project, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=timeout)
-
     sid = payload.get("session_id")
     try:
         if payload.get("source") in ("startup", "resume", "clear") and isinstance(sid, str) and sid:
-            done = hub("claim", f"--sessao={sid}", "--espera", "1.5", timeout=3)
+            claim = [sys.executable, HUB, "claim", f"--sessao={sid}", "--espera", "1.5", "--raiz", project]
+            done = subprocess.run(claim, cwd=project, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=3)
             if done.returncode != 0 and done.stderr.strip():
                 print(done.stderr.splitlines()[0][:300], flush=True)
     except subprocess.TimeoutExpired:
@@ -131,15 +129,6 @@ def hub_status(payload, project):
               "claim again.", flush=True)
     except Exception:  # claim is best effort: the session just is not the owner
         pass
-    try:
-        done = hub("status", timeout=5)
-        text = done.stdout if done.returncode == 0 else " ".join(done.stderr.splitlines()[:1])[:300]
-    except subprocess.TimeoutExpired:
-        text = "The hub status did not answer in time; run `hub.py status` in this folder."
-    except Exception:
-        text = ""
-    if text.strip():
-        print(text, end="" if text.endswith(chr(10)) else chr(10))
 
 
 def ledger_status(payload, project):

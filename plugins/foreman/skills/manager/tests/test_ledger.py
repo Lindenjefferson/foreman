@@ -2882,6 +2882,9 @@ blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
 check("in a one-cycle delivery, status names what must come before the full qa: version, cleanup, deferred items",
       len(blockers) == 3 and any("version" in item for item in blockers) and any("cleanup" in item for item in blockers)
       and any("D1" in item for item in blockers), blockers)
+line = next((text for text in in_one("status").stdout.splitlines() if text.startswith("before the full qa")), "")
+check("the printed line leaves out the deferred items, which status already lists",
+      "version" in line and "cleanup" in line and "D1" not in line, line)
 r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
 check("add --full is refused while any of them is missing, naming each", r.returncode != 0 and "cleanup" in r.stderr
       and "version" in r.stderr, r.stderr)
@@ -2895,16 +2898,19 @@ check("once the version rose (and the reviewer PASSed that commit), the cleanup 
       in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T2")
 in_one("scope", "--cycle", "2", "--tasks", "T2")
-blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
+state = json.loads(in_one("status", "--json").stdout)
 r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
-check("a delivery of several cycles has the same blockers, and the full qa waits for the reviewer's PASS after the "
-      "latest dev run", blockers == ["the reviewer has not PASSed after the latest dev run (manager step 6)"]
-      and r.returncode != 0 and "reviewer" in r.stderr, (blockers, r.stderr))
+check("with a cycle left, status shows no full_qa_blockers, and add --full is still refused until the reviewer's "
+      "PASS after the latest dev run", state["full_qa_blockers"] == [] and state["scope"]["cycles_left"] == 1
+      and "before the full qa" not in in_one("status").stdout and r.returncode != 0 and "reviewer" in r.stderr,
+      (state["full_qa_blockers"], r.stderr))
 in_one("add", "--agent", "reviewer", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1")
-check("a reviewer FAIL after the latest dev run still blocks the full qa",
-      any("reviewer" in item for item in json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]))
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("a reviewer FAIL after the latest dev run still blocks the full qa", r.returncode != 0 and "reviewer" in r.stderr,
+      r.stderr)
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "fix-1")
 in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+in_one("add", "--agent", "qa", "--verdict", "PASS")
 os.makedirs(os.path.join(one, "docs"), exist_ok=True)
 commit_one("docs/lessons.md", "- a lesson\n")
 commit_one("plan.md", "# plan\n\n### T1\n- Goal: a\n\n## Errata\n- a line\n")
@@ -2913,9 +2919,9 @@ check("a commit of only the plan or docs/lessons.md after the reviewer's PASS do
 commit_one("src.txt", "late\n")
 blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
 r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
-check("a commit of another file after the reviewer's PASS blocks the full qa, as the gate's Reviewed check would",
-      any("src.txt" in item and "reviewed head" in item for item in blockers) and r.returncode != 0
-      and "src.txt" in r.stderr, (blockers, r.stderr))
+check("with no cycle left, a commit of another file after the reviewer's PASS blocks the full qa, as the gate's "
+      "Reviewed check would", any("src.txt" in item and "reviewed head" in item for item in blockers)
+      and r.returncode != 0 and "src.txt" in r.stderr and "src.txt" in in_one("status").stdout, (blockers, r.stderr))
 in_one("add", "--agent", "reviewer", "--verdict", "PASS")
 check("once the reviewer PASSed the fix, nothing blocks the full qa at the final head",
       json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == []

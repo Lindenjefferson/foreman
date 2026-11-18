@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """PreToolUse hook (matcher Bash|PowerShell, see hooks.json): denies skipping the secret-scan pre-commit hook,
 anything that reaches the default branch while the delivery is in autonomous mode, a relative cd before a git step
-that lands work, a git checkout or restore that overwrites work not committed, a project command inside timeout, the project's dev server outside background mode, and what a
-foreman hub session may not do (approve, integrate, run kickoff); asks the user before a delivery starts
-outside Claude Code's auto permission mode (not the delivery's autonomous mode).
+that lands work, a git checkout or restore that overwrites work not committed, a project command inside timeout,
+the project's dev server outside background mode, and what a foreman hub session may not do (approve, integrate,
+run kickoff); asks the user before a delivery starts outside Claude Code's auto permission mode (not the delivery's
+autonomous mode).
 
 With a ledger (any mode), denied in the foreground or background: a relative change of directory (cd, pushd,
 Set-Location and their aliases, to a path that does not start at a root, a drive or ~, or cd -) followed in the same
@@ -36,9 +37,10 @@ as git does), --git-dir, --work-tree, or GIT_DIR or GIT_WORK_TREE set before it 
 folder the guard cannot resolve ($PWD, $(pwd), a missing folder) counts as none. Otherwise
 the step is read both in the folder of the latest cd to a rooted path before it and in the session's directory, and
 the stricter answer wins (deny, then ask): a cd the guard does not follow (popd, cd -, a relative cd, one inside ( )
-or $( )) cannot move the check away from the session's repository. Pushing and merging the work branch pass; in supervised mode, or with no ledger, nothing here is
-denied, and a push of the default branch (the same reading) asks the user: approval 2 is theirs, and a push of a work
-branch passes, since a permission rule cannot tell them apart inside a compound command. With the user's standing
+or $( )) cannot move the check away from the session's repository. Pushing and merging the work branch pass; in
+supervised mode, or with no ledger, nothing here is denied, and a push of the default branch (the same reading) asks
+the user: approval 2 is theirs, and a push of a work branch passes, since a permission rule cannot tell them apart
+inside a compound command. With the user's standing
 approval (ledger.py approve, read from approval.json beside the ledger), a publish passes when what it publishes is a
 gated delivery: the commit (the ref a git merge names, HEAD for a pull request merge, the source of a push, or the
 default branch a merge earlier in the same command already approved) has the tree of the commit that last added the
@@ -61,9 +63,10 @@ of its own), and so is a command substitution outside quotes; one inside double 
 match the command as plain text and cannot tell a flag from a message, which is why this check lives here. A command
 that does not parse (an unbalanced quote) passes, since the shell refuses it too.
 
-A foreman hub session (its payload session_id in "sessoes" of the .superpowers/hub.json found from the session's
-directory upwards, valid by hub.py's own check, and with no .superpowers/ledger.jsonl beside it: there the project
-wins; links and junctions resolved) only reads and delegates. Denied in it, in the foreground or background, git -C
+A foreman hub session (its payload session_id in "sessoes" of the first .superpowers/hub.json from the session's
+directory upwards that lists it, valid by hub.py's own check, and with no .superpowers/ledger.jsonl beside it: there
+the project wins; a stray hub.json below the hub is passed over; links and junctions resolved) only reads and
+delegates; it is denied a pull request merge (gh, glab) too. Denied in it, in the foreground or background, git -C
 included: any git outside the read-only list (status, log, diff, show, rev-parse, ls-files, describe, shortlog,
 blame, grep, cat-file, for-each-ref, merge-base, name-rev, rev-list, ls-tree, show-ref, ls-remote; remote alone or
 -v; branch with no name or with --list, --contains, --merged or --no-merged; config --get, --get-all or --list;
@@ -76,8 +79,9 @@ its file (cat, grep, ls) passes. The reason reads "hub session: <step> belongs t
 session that is not the "dono" is denied hub.py delegate, add, set, remove and init ("another hub session took over
 this root"); status and abrir pass. In any session, those writing commands are denied when the root they name
 (--raiz, else the session's directory) has a valid hub.json whose dono is another session (no session_id included);
-a registry with no dono yet (fresh from init) is written by any session, and the next SessionStart claims it. hub.py claim is denied in every session, since only the SessionStart hook runs it. Without a session_id, or
-with an invalid hub.json, the session is no hub session; a hub.json or hub.py that fails to load leaves the rest of
+a registry with no dono yet (fresh from init) is written by any session, and the next SessionStart claims it.
+hub.py claim is denied in every session, since only the SessionStart hook runs it. Without a session_id, or with no
+valid hub.json that lists it, the session is no hub session; a hub.json or hub.py that fails to load leaves the rest of
 the guard on.
 
 A PowerShell call goes through the same checks, read with PowerShell's own rules. Text the command only passes
@@ -291,10 +295,6 @@ def ps_segments(command):
         if char in PS_QUOTES:
             quoted, index = ps_quoted(text, index, char)
             word, open_word = word + quoted, True
-            continue
-        if pair == "${" and text.find("}", index + 2) >= 0:
-            end = text.find("}", index + 2)
-            word, open_word, index = word + text[index:end + 1], True, end + 1
             continue
         if pair == "${" and text.find("}", index + 2) >= 0:
             end = text.find("}", index + 2)
@@ -781,21 +781,22 @@ def hub_registry(folder):
 
 
 def hub_session(cwd, session_id):
-    """"owner" or "former" when session_id is in sessoes of the hub.json found from cwd upwards (links and junctions
-    resolved); None with no session_id, no hub.json, an invalid one or one beside a ledger: the project wins."""
+    """"owner" or "former" when session_id is in sessoes of the first hub.json from cwd upwards that lists it (links
+    and junctions resolved); one that is invalid, beside a ledger (that project wins for its own sessions) or does
+    not list the session is passed over, so a stray hub.json in a project does not hide the hub above it. None with
+    no session_id or no hub.json that lists it."""
     if not isinstance(session_id, str) or not session_id:
         return None
     folder = os.path.realpath(cwd)
-    while not os.path.isfile(os.path.join(folder, ".superpowers", "hub.json")):
+    while True:
+        here = os.path.join(folder, ".superpowers")
+        if os.path.isfile(os.path.join(here, "hub.json")) and not os.path.exists(os.path.join(here, "ledger.jsonl")):
+            data = hub_registry(folder)
+            if data and session_id in data.get("sessoes", []):
+                return "owner" if data.get("dono") == session_id else "former"
         if os.path.dirname(folder) == folder:
             return None
         folder = os.path.dirname(folder)
-    if os.path.exists(os.path.join(folder, ".superpowers", "ledger.jsonl")):
-        return None
-    data = hub_registry(folder)
-    if not data or session_id not in data.get("sessoes", []):
-        return None
-    return "owner" if data.get("dono") == session_id else "former"
 
 
 HUB_COMMANDS = {"init", "status", "add", "set", "remove", "delegate", "abrir", "claim"}
@@ -858,6 +859,8 @@ def hub_denial(command, powershell, role, cwd, session_id):
         ledger, step = script_args(program, arguments, "ledger.py"), None
         if program == "git" and not git_reads(*git_command(arguments)[:2]):
             step = "git " + git_command(arguments)[0]
+        elif program in ("gh", "glab") and merges_pull_request(arguments):
+            step = f"{program} merge of a pull request"
         elif ledger is not None and ledger[:1] != ["status"]:
             step = " ".join(["ledger.py"] + ledger[:1])
         elif script_args(program, arguments, "gate.py") is not None:
@@ -1005,9 +1008,10 @@ def main():
         reason = None
     else:
         dev = dev_command(commands(cwd))
-        reason = None if not dev or not runs_it(command, dev, powershell) else (f"`{dev}` is this project's dev server and never returns, so in the foreground it hangs the call and "
-                  "leaves an orphan process. Run the same command with the tool's run_in_background set to true "
-                  "(and stop it before you finish), or reuse a server already running for this directory.")
+        reason = None if not dev or not runs_it(command, dev, powershell) else (
+            f"`{dev}` is this project's dev server and never returns, so in the foreground it hangs the call and "
+            "leaves an orphan process. Run the same command with the tool's run_in_background set to true "
+            "(and stop it before you finish), or reuse a server already running for this directory.")
     if reason is None:
         if publishes == "ask":  # only when nothing above denies: a denial wins over the ask
             json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
