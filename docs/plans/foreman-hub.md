@@ -284,3 +284,13 @@ Decisões tomadas em nome do dono, com a opção recomendada. **Confirmadas pelo
 - **Archify no gate do plugin:** fica fora; o Archify não é dependência do foreman. Recomendado: só a prática deste repositório (diagrama conferido antes de cada commit).
 - **Autoavaliação contra as boas práticas do vault:** quatro lacunas para o roadmap (teto de rodadas no modo autônomo, etiqueta "pre-existing" no relatório do `reviewer`, modelo de PR com Testing/Risk/How to revert, critério "a doc diz o que o código faz?" no `reviewer`). Recomendado: entram como "Não triadas" para passar pelo filtro.
 - **T1 a T7 não começaram:** a noite cobriu o pedido (spikes, T8, revisões do Fable). O plano do hub ainda não teve a aprovação 1, e construir um componente novo de esforço G sem ela iria contra "não executar o que não se entendeu". Recomendado: o dono aprova o plano (ou corrige) e a T1 começa na volta.
+
+## VALIDAR (execução de T1 a T7)
+
+Decisões tomadas em nome do dono durante a execução, com a opção recomendada.
+
+- **Sessão de hub com git só de leitura:** em vez de negar uma lista de comandos (`commit`, `merge`, `push`...), o guard nega todo subcomando do git fora de uma lista de leitura (`status`, `log`, `diff`, `show`...). Fecha de uma vez `pull`, `revert`, `am`, `reset`, `branch -f` e `fetch . x:main`, que a revisão do Fable achou abertos. Custo se errado: o hub perde um git de leitura que não está na lista.
+- **Ferramentas de edição fora do guard:** a sessão de hub ainda consegue editar `hub.json`, `ledger.jsonl` ou `approval.json` com Write ou Edit. Registrado como limite aceito na spec. Alternativa: estender o `PreToolUse` às ferramentas de edição desses arquivos.
+- **`-n <nome>` nos comandos padrão de abrir:** o `wt.exe` e o `Start-Process` abrem a sessão com o nome do projeto, para o hub achá-la no `ListAgents` (o spike S1 mostrou que é pelo nome que ela aparece).
+- **Fora do Windows, `bg` desligado de propósito e sem `abrir`:** o `hub.py abrir` recusa em vez de cair no `--bg`, porque o dono disse desligado.
+- **`claim` no `/clear`:** a janela do hub reassume a posse depois de um `/clear`, que muda o `session_id`; a compactação não.

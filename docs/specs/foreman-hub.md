@@ -207,6 +207,7 @@ Conferido contra as práticas do dono (arquivo de contexto só com necessidade; 
 - Os arquivos seguem a convenção do foreman, `docs/specs/<slug>.md` e `docs/plans/<slug>.md` (aceito pelo dono).
 - O `hub.py status` roda o `ledger.py status` de cada projeto marcado, e ele roda `git` na pasta do projeto, que respeita a configuração local dela (`core.fsmonitor`, por exemplo). É a mesma exposição que o `session-start.py` já tem em cada projeto; o hub só a repete em cada pasta marcada da raiz. Um clone não traz `.git/config`, então o risco é de uma pasta já adulterada na máquina.
 - O `hub.json` é confiável como um script do dono: guarda o comando de abrir e o texto dos pedidos, que o hub lê na abertura. Uma pasta copiada de outra pessoa com `.superpowers/hub.json` dentro faria o mesmo; o hub só nasce de um `hub.py init` na pasta-raiz do próprio dono.
+- O `bash-guard.py` vê só os comandos do Bash e do PowerShell. Uma sessão de hub que escrevesse direto no `hub.json`, num `ledger.jsonl` ou num `approval.json` com as ferramentas de edição passaria; o guard é uma rede contra o descuido, não uma barreira contra quem quer contornar (decisão a validar pelo dono; a alternativa é estender o hook às ferramentas de edição desses três arquivos).
 - As ✋ 1 e ✋ 2 não aparecem no ledger como passo `ask`; o hub as conhece pela mensagem do manager. Sem a mensagem (sessão que perdeu o endereço), o dono as vê na janela do projeto.
 - Sem polling: uma pendência aparece no hub quando o dono fala com ele ou quando chega uma mensagem.
 - Só sessões da mesma máquina.
