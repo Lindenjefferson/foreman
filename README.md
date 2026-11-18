@@ -69,6 +69,8 @@ claude plugin install foreman@foreman --scope local
 1. `prepara este projeto com o kickoff` (ou `/foreman:kickoff`): uma vez, cria a estrutura;
 2. o que você quer entregar, como `implementar a exportação do extrato em CSV` ou `corrigir o bug do login`: o **manager** conduz do plano ao gate.
 
+O hub é a única pasta que não é projeto e recebe o plugin: instale-o na pasta-raiz dos projetos e chame `/foreman:hub`.
+
 Para tirar de um projeto: `claude plugin uninstall foreman@foreman --scope local`.
 
 Os scripts leem algumas seções do `CLAUDE.md` do projeto pelo título, em português ("Comandos", "Testes", "Versão" e as outras que o kickoff escreve): mantenha esses títulos como estão. O resto do arquivo, e a conversa com o Claude, podem ser em qualquer língua.
@@ -82,6 +84,7 @@ Noutro computador, num projeto que já usa o plugin: clone, instale o plugin e p
 | [`kickoff`](plugins/foreman/skills/kickoff/SKILL.md) | Prepara um projeto novo ou existente: `CLAUDE.md`, `CLAUDE.local.md`, `docs/`, `.gitignore`, hook de segredos, a lista de termos do dono (uma vez por máquina) e permissões dos agentes. |
 | [`manager`](plugins/foreman/skills/manager/SKILL.md) | Conduz a entrega do tamanho ao merge, em ciclos, com duas aprovações suas; o que vale só numa situação (modo autônomo, pausa, telas, paralelo, várias sessões) está em [`references/`](plugins/foreman/skills/manager/references/), lido quando ela ocorre. |
 | [`validar`](plugins/foreman/skills/validar/SKILL.md) | Percorre com você, item a item, as decisões tomadas em seu nome (lista VALIDAR) e grava cada resposta. |
+| [`hub`](plugins/foreman/skills/hub/SKILL.md) | Uma sessão numa pasta que reúne vários projetos: repassa pedidos a cada um e mostra o que espera você, sem planejar, aprovar nem integrar. |
 | [`atualizar`](plugins/foreman/skills/atualizar/SKILL.md) | Atualiza o plugin num projeto num ponto de parada da entrega e, na sessão nova, acrescenta as linhas novas dos templates e aplica as notas de cada versão pulada. |
 | [`feedback-plugin`](plugins/foreman/skills/feedback-plugin/SKILL.md) | No fim da entrega, escreve o pedido para a sessão do plugin, com métricas e lições candidatas a regra geral. |
 | [`anonimizar`](plugins/foreman/skills/anonimizar/SKILL.md) | Num projeto anterior à lista de termos do dono, antes de publicá-lo: tira dos arquivos e do histórico os dados pessoais e as menções a outros projetos seus que o `CLAUDE.md` não declara como dependência, enxuga a documentação e pede ao `newcomer` a leitura de quem nunca o viu. |
@@ -97,7 +100,7 @@ Noutro computador, num projeto que já usa o plugin: clone, instale o plugin e p
 | [`spec-checklist.md`](plugins/foreman/skills/manager/templates/spec-checklist.md) | O que toda spec e todo plano respondem, com o pré-mortem de cada escrita. |
 | [Hook de segredos e UTF-8](plugins/foreman/hooks/pre-commit-secret-scan.py) | `pre-commit` que bloqueia `.env`, linhas com cara de segredo e texto que não é UTF-8 ou tem caracteres invisíveis. |
 | [Hook de retomada](plugins/foreman/hooks/session-start.py) | Ao abrir ou retomar uma sessão, devolve ao manager o estado da entrega. |
-| [Guarda dos comandos](plugins/foreman/hooks/bash-guard.py) | Antes de cada comando: nega pular o `pre-commit`, publicar na branch principal no modo autônomo, um `cd` relativo antes de integrar ou comitar e o servidor de dev fora do background; pergunta antes do push da principal e antes de iniciar uma entrega fora do modo de permissão `auto` do Claude Code. |
+| [Guarda dos comandos](plugins/foreman/hooks/bash-guard.py) | Antes de cada comando: nega pular o `pre-commit`, aprovar, integrar e rodar kickoff numa sessão de hub, publicar na branch principal no modo autônomo, um `cd` relativo antes de integrar ou comitar e o servidor de dev fora do background; pergunta antes do push ou do merge na principal (inclusive de PR) e antes de iniciar uma entrega fora do modo de permissão `auto` do Claude Code. |
 | [Andamento](plugins/foreman/hooks/andamento.js) | Mod do Claude Code (uma extensão da interface): até três linhas sob o prompt com o andamento da entrega e o que espera você, e o painel `/andamento`. |
 
 ## O que fica no seu projeto

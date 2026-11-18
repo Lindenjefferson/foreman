@@ -1096,6 +1096,7 @@ r = run("add", "--agent", "dev", "--task", "T2", "--verdict", "DONE", "--full", 
 check("--full is refused on the dev", r.returncode != 0 and "--full" in r.stderr, r.stderr)
 check("refused --full runs write nothing", len(status(FULL)["runs"]) == 1)
 FIRST, PLAIN, SECOND = report_file("first.md"), report_file("plain.md"), report_file("second.md")
+add("reviewer", "PASS", ledger=FULL)
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--report", FIRST, ledger=FULL)
 state = status(FULL)
 check("--full on qa is stored on the run and shows as full_qa",
@@ -1106,8 +1107,8 @@ state = status(FULL)
 check("a qa run without --full has no full key and does not replace full_qa",
       "full" not in state["qa"][0] and state["full_qa"]["report"] == FIRST, state["full_qa"])
 add("dev", "DONE", "T3", ledger=FULL)
-run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--report", SECOND, ledger=FULL)
 add("reviewer", "PASS", ledger=FULL)
+run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--report", SECOND, ledger=FULL)
 add("dev", "DONE", "T4", ledger=FULL)
 state = status(FULL)
 check("full_qa is the latest full qa run across the whole delivery, even from an earlier cycle",
@@ -2846,7 +2847,7 @@ check("a module doc still collides with nothing else, and other files still coll
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]) == ["src/a.kt (T1 touches src/a.kt)"],
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]))
 
-# The newcomer's reading goes in the ledger; a one-cycle delivery runs its full suite once, after what changes it
+# The newcomer's reading goes in the ledger; a delivery runs its full suite once, after what changes its head
 one = os.path.join(repo, "one-cycle")
 os.makedirs(one)
 for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t")):
@@ -2881,19 +2882,110 @@ blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
 check("in a one-cycle delivery, status names what must come before the full qa: version, cleanup, deferred items",
       len(blockers) == 3 and any("version" in item for item in blockers) and any("cleanup" in item for item in blockers)
       and any("D1" in item for item in blockers), blockers)
+line = next((text for text in in_one("status").stdout.splitlines() if text.startswith("before the full qa")), "")
+check("the printed line leaves out the deferred items, which status already lists",
+      "version" in line and "cleanup" in line and "D1" not in line, line)
 r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
 check("add --full is refused while any of them is missing, naming each", r.returncode != 0 and "cleanup" in r.stderr
       and "version" in r.stderr, r.stderr)
 commit_one("VERSION", "1.1.0\n")
 in_one("resolve", "--id", "D1", "--decision", "discarded: no user sees it")
 in_one("note", "--text", "cleanup skipped: nothing left duplicated or dead")
-check("once the version rose, the cleanup was noted as skipped and every deferred item decided, nothing blocks it",
+in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+check("once the version rose (and the reviewer PASSed that commit), the cleanup was noted as skipped and every "
+      "deferred item decided, nothing blocks it",
       json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [] and
       in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T2")
-in_one("scope", "--cycle", "2", "--tasks", "T2")
-check("a delivery of more than one cycle has no such blockers",
+in_one("scope", "--cycle", "2", "--tasks", "T2,T3")
+state = json.loads(in_one("status", "--json").stdout)
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("with a planned task left, status shows no full_qa_blockers, and add --full is still refused until the reviewer's "
+      "PASS after the latest dev run", state["full_qa_blockers"] == [] and state["scope"]["cycles_left"] == 1
+      and "before the full qa" not in in_one("status").stdout and r.returncode != 0 and "reviewer" in r.stderr,
+      (state["full_qa_blockers"], r.stderr))
+in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T3")
+state = json.loads(in_one("status", "--json").stdout)
+check("once no planned task is left, status lists the reviewer's missing PASS even with the cycle still open",
+      any("reviewer" in item for item in state["full_qa_blockers"]), state["full_qa_blockers"])
+in_one("add", "--agent", "reviewer", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1")
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("a reviewer FAIL after the latest dev run still blocks the full qa", r.returncode != 0 and "reviewer" in r.stderr,
+      r.stderr)
+in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "fix-1")
+in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+in_one("add", "--agent", "qa", "--verdict", "PASS")
+os.makedirs(os.path.join(one, "docs"), exist_ok=True)
+commit_one("docs/lessons.md", "- a lesson\n")
+commit_one("plan.md", "# plan\n\n### T1\n- Goal: a\n\n## Errata\n- a line\n")
+check("a commit of only the plan or docs/lessons.md after the reviewer's PASS does not block the full qa",
       json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [])
+commit_one("src.txt", "late\n")
+blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("with no cycle left, a commit of another file after the reviewer's PASS blocks the full qa, as the gate's "
+      "Reviewed check would", any("src.txt" in item and "reviewed head" in item for item in blockers)
+      and r.returncode != 0 and "src.txt" in r.stderr and "src.txt" in in_one("status").stdout, (blockers, r.stderr))
+in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+check("once the reviewer PASSed the fix, nothing blocks the full qa at the final head",
+      json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == []
+      and in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
+
+QUIET = ".superpowers/no-dev.jsonl"
+run("start", "--slug", "no-dev", ledger=QUIET)
+check("a delivery with no dev run has no reviewer blocker",
+      not any("reviewer" in item for item in status(QUIET)["full_qa_blockers"]), status(QUIET)["full_qa_blockers"])
+WAIVED = ".superpowers/waived.jsonl"
+run("start", "--slug", "waived", ledger=WAIVED)
+add("dev", "DONE", "T1", ledger=WAIVED)
+add("reviewer", "FAIL", open_count=1, ledger=WAIVED)
+r = run("waive", "--agent", "reviewer", "--reason", "the finding is wrong", ledger=WAIVED)
+check("a waived reviewer FAIL unblocks the full qa", r.returncode == 0
+      and not any("review" in item for item in status(WAIVED)["full_qa_blockers"]), (r.stderr, status(WAIVED)))
+
+# A ledger of an earlier version whose last cycle ran qa --full before the reviewer: status and the gate still read
+# it, and the gate asks for the full qa again once the head moved past it
+old = os.path.join(repo, "old-full")
+os.makedirs(os.path.join(old, ".superpowers"))
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t")):
+    subprocess.run(["git", *args], cwd=old, check=True, capture_output=True)
+
+
+def commit_old(name, text):
+    with open(os.path.join(old, name), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    for args in (("add", name), ("commit", "-q", "-m", name)):
+        subprocess.run(["git", *args], cwd=old, check=True, capture_output=True)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=old, capture_output=True, text=True).stdout.strip()
+
+
+ok_cmd, ui_cmd = (f"`{sys.executable} -c \"print('{word}')\"`" for word in ("ok", "ui"))
+commit_old("CLAUDE.md", f"# p\n\n## Comandos\n\n- Testes: {ok_cmd}\n- Verificação de interface: {ui_cmd}\n")
+commit_old(".gitignore", ".superpowers/\n")
+subprocess.run(["git", "switch", "-q", "-c", "feat/old"], cwd=old, check=True, capture_output=True)
+tip = commit_old("src.txt", "a\n")
+with open(os.path.join(old, ".superpowers", "ledger.jsonl"), "w", encoding="utf-8", newline="\n") as handle:
+    for entry in ({"type": "start", "slug": "old", "base": "main"},
+                  {"type": "run", "agent": "dev", "task": "T1", "verdict": "DONE", "open": 0, "head": tip},
+                  {"type": "run", "agent": "reviewer", "verdict": "PASS", "open": 0, "head": tip},
+                  {"type": "run", "agent": "qa", "verdict": "PASS", "open": 0, "head": tip, "interface": True},
+                  {"type": "run", "agent": "dev", "task": "T2", "verdict": "DONE", "open": 0, "head": tip},
+                  {"type": "run", "agent": "qa", "verdict": "PASS", "open": 0, "head": tip, "full": True},
+                  {"type": "run", "agent": "reviewer", "verdict": "PASS", "open": 0, "head": tip}):
+        handle.write(json.dumps({**entry, "at": "2026-01-01T00:00:00+00:00"}) + "\n")
+r = run("status", "--json", cwd=old)
+state = json.loads(r.stdout) if r.returncode == 0 else {}
+check("an older ledger with a last-cycle qa --full before the reviewer still reads: full_qa is that run",
+      (state.get("full_qa") or {}).get("head") == tip and state.get("cycle") == 2 and state.get("ready_for_gate")
+      and state.get("full_qa_blockers") == [], (r.stderr, state))
+GATE = os.path.join(os.path.dirname(LEDGER), "gate.py")
+r = subprocess.run([sys.executable, GATE, "--base", "main"], cwd=old, capture_output=True, text=True, encoding="utf-8")
+check("the gate takes that last-cycle full qa while the head has not moved",
+      re.search(r"Full suite:\s+PASS", r.stdout) and "Traceback" not in r.stderr, r.stdout + r.stderr)
+commit_old("src.txt", "b\n")
+r = subprocess.run([sys.executable, GATE, "--base", "main"], cwd=old, capture_output=True, text=True, encoding="utf-8")
+check("once a commit follows it, the gate asks for the full qa again at the final head",
+      re.search(r"Full suite:\s+FAIL", r.stdout) and "changed after the full qa" in r.stdout, r.stdout + r.stderr)
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

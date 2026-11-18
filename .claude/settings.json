@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(for t in plugins/foreman/hooks/tests/test_*.py plugins/foreman/skills/manager/tests/test_*.py; do sh plugins/foreman/hooks/python.sh \"$t\"; done)",
+      "Bash(for t in plugins/foreman/hooks/tests/test_*.py plugins/foreman/skills/*/tests/test_*.py; do sh plugins/foreman/hooks/python.sh \"$t\"; done)",
       "Bash((cd plugins/foreman && claude plugin test))",
       "Bash(claude plugin validate plugins/foreman)",
       "PowerShell(claude plugin validate plugins/foreman)",

@@ -30,7 +30,7 @@ Then run the tests your task affects before reporting: the ones you wrote or cha
 - Every new table follows the project's access/tenant model and gets a negative test (an unauthorized role reads or writes nothing). Assert the affected-row count, not just "no error".
 
 ## UI work
-Before building or changing a screen, load the `frontend-design` skill. Verify with the UI verification command the project's `CLAUDE.md` lists under "Comandos" (add a test there for a golden path the task adds): while adjusting, run only the scenes of the screens you touch, and the whole command once, before reporting; if there is none, a throwaway script in the system's temp folder.
+Before building or changing a screen, load the `frontend-design` skill. Verify with the UI verification command the project's `CLAUDE.md` lists under "Comandos" (add a test there for a golden path the task adds): run each interface test or flow you add or change on the paths it touches and quote the result in `Interface run:`; if there is none, a throwaway script in the system's temp folder.
 
 Green tests do not prove a screen matches its mock. When the task builds or changes a screen the plan gives a mock for, capture it in every screen format the project's `CLAUDE.md` lists, render the mock at each format's size (one HTML page: a headless browser through Bash, the image in the system's temp folder; reading its HTML is no comparison, and a machine with no browser is a DONE_WITH_CONCERNS), read both images, compare them (what the eye reads first, spacing and alignment, how each format uses its space) and fix the differences before reporting; a difference you leave goes in the report with the reason.
 
@@ -59,6 +59,7 @@ Mutation evidence: <guard loosened> -> <test> red, restored   (or n/a — no gua
 Docs: <file updated, or none needed and why>
 Errata: <one line for the plan's ## Errata per divergence from the plan, or none>
 Lessons: <lines of docs/lessons.md that applied and how the diff meets them, or none applied>; proposed: <a new lesson and the check that could catch it, or none>
+Interface run: <each interface test or flow added or changed, the paths run, the result quoted | not run here: why (DONE_WITH_CONCERNS) | n/a — none>
 Mock: <screens and formats compared with the mock, differences left and why, or n/a — no screen with a mock>
 Processes: none left running (each one you started, stopped by PID); ports: <each port you started a server on, or none>
 ```

@@ -68,7 +68,8 @@ A skill `manager` conduz cada entrega, do tamanho do pedido ao `gate.py` (o flux
 - O que não dá para virar checagem automática (teste, helper, lint) vira uma linha em `docs/lessons.md`, que o `dev` e o `reviewer` leem.
 - O hook `pre-commit` do git (instalado pelo `kickoff`) bloqueia commits com arquivos `.env` ou linhas com cara de segredo. Nunca usar `--no-verify` nem mexer em `.git/hooks`: um segredo commitado fica no histórico.
 - Cada entrega aprovada pelo `gate.py` gera um relatório em `docs/quality-reports/`.
-- Formatos de tela que a rodada de design, as capturas e a revisão visual cobrem (se houver tela): _(ex.: a menor largura suportada e o desktop; celular e tablet; a resolução do jogo)_
+- Formatos de tela que a rodada de design, as capturas da execução completa e a revisão visual cobrem (se houver tela): _(ex.: a menor largura suportada e o desktop; celular e tablet; a resolução do jogo)_
+- Formatos do ciclo (opcional, se houver mais de um formato de tela): _(os formatos, e ajustes como uma fonte maior, que o `qa` de um ciclo usa nas capturas e no fluxo; sem esta linha, o primeiro de "Formatos de tela". A matriz completa, com todos os formatos e temas, roda só na execução completa)_
 - Ambiente de testes antes de produção: _(onde a entrega é publicada primeiro e como as migrations passam por ele; os procedimentos ficam em `docs/operacao.md`)_
 
 ## Regras que valem sempre
