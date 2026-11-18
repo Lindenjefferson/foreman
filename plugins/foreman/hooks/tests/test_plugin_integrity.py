@@ -123,5 +123,13 @@ unsaid = given - set(re.findall(r"case '(\w+)'", mod_text))
 check("every step ledger.py gives has its text in the mod (with none, the raw step name reaches the user)",
       not unsaid, unsaid)
 
+hub_path = os.path.join(ROOT, "skills", "hub", "SKILL.md")
+hub_text = open(hub_path, encoding="utf-8").read() if os.path.exists(hub_path) else ""
+check("the hub skill is named hub and cites hub.py by its plugin path",
+      front_matter(hub_path).get("name", "").strip() == "hub" and "${CLAUDE_PLUGIN_ROOT}/skills/hub/hub.py" in hub_text, hub_text[:80])
+writes = [w for w in ("ledger.py", "plan --path", "waive", "extend", "gate.py") if w in hub_text]
+check("the hub skill has no ledger.py write subcommand and no gate.py, and stays within 40 lines",
+      hub_text and not writes and len(hub_text.splitlines()) <= 40, (writes, len(hub_text.splitlines())))
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
