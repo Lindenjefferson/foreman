@@ -1,4 +1,4 @@
-import json, os, subprocess, sys, tempfile
+import json, os, shutil, subprocess, sys, tempfile
 
 HUB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hub.py")
 results = []
@@ -293,6 +293,106 @@ with open(os.path.join(f8, "b", ".claude", "settings.local.json"), "wb") as fh:
     fh.write(bytes([0xEF, 0xBB, 0xBF]) + json.dumps({"enabledPlugins": {"foreman@foreman": True}}).encode())
 check("FIX8 a settings file with a BOM is accepted", names(status(f8)[1]) == ["b"])
 
+
+# T2
+LEDGER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "manager", "ledger.py")
+
+
+def lg(pasta, *args):
+    return subprocess.run([sys.executable, LEDGER, *args], cwd=pasta, capture_output=True, text=True, encoding="utf-8")
+
+
+def gitproj(raiz, nome):
+    marker(raiz, nome)
+    pasta = os.path.join(raiz, nome)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pasta, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "b"],
+                   cwd=pasta, check=True)
+    return pasta
+
+
+t1 = root()
+pa = gitproj(t1, "a")
+lg(pa, "start", "--slug", "s")
+e = proj(status(t1)[1], "a")["entrega"]
+check("AC_T2_1 an open ledger gives the slug and autonomo false", e and e["slug"] == "s" and e["autonomo"] is False
+      and e["pausada"] is False and e["espera"] == [] and e["validar"] == 0 and e["faltam"] == {"tarefas": 0, "ciclos": 0}, e)
+lg(pa, "mode", "autonomous", "--until", "23:59")
+check("AC_T2_1 autonomo follows ledger.py mode", proj(status(t1)[1], "a")["entrega"]["autonomo"] is True)
+lg(pa, "scope", "--cycle", "c1", "--tasks", "T1,T2")
+check("AC_T2_1 faltam counts the tasks and cycles left",
+      proj(status(t1)[1], "a")["entrega"]["faltam"] == {"tarefas": 2, "ciclos": 1})
+lg(pa, "note", "--text", "x", "--validar", "--recommend", "y")
+check("AC_T2_1 validar counts the open VALIDAR items", proj(status(t1)[1], "a")["entrega"]["validar"] == 1)
+
+t2 = root()
+gitproj(t2, "a")
+pb = gitproj(t2, "b")
+lg(pb, "start", "--slug", "w")
+for _ in range(7):
+    lg(pb, "add", "--agent", "reviewer", "--task", "plan", "--verdict", "FAIL", "--critical", "1", "--origin", "execution=1")
+d = status(t2)[1]
+check("AC_T2_2 the project that waits for the owner comes first, with the step text", names(d) == ["b", "a"]
+      and len(d["projetos"][0]["entrega"]["espera"]) == 1 and "plan" in d["projetos"][0]["entrega"]["espera"][0], d)
+r = run(t2, "status")
+check("AC_T2_2 the text status lists it first with the step text", r.stdout.index("b ") < r.stdout.index("a [")
+      and "plan review still fails" in r.stdout, r.stdout)
+
+t3 = root()
+pgood = gitproj(t3, "good")
+lg(pgood, "start", "--slug", "g")
+pbad = gitproj(t3, "bad")
+write(os.path.join(pbad, ".superpowers", "ledger.jsonl"), "not json at all"+chr(10)+"{{{")
+r, d = status(t3)
+check("AC_T2_3 a broken ledger gives ledger unreadable and null, the other is complete", r.returncode == 0
+      and proj(d, "bad")["entrega"] is None and "ledger unreadable" in proj(d, "bad")["avisos"]
+      and proj(d, "good")["entrega"]["slug"] == "g", out(r))
+
+t4 = root()
+p4 = gitproj(t4, "a")
+write(os.path.join(p4, ".superpowers", "atualizar.json"), "{}")
+check("AC_T2_4 atualizar.json gives half-update", "half-update" in proj(status(t4)[1], "a")["avisos"])
+
+t5 = root()
+p5 = gitproj(t5, "a")
+check("AC_T2_5 no foreman.home: no version warning", proj(status(t5)[1], "a")["avisos"] == [])
+home = os.path.realpath(tempfile.mkdtemp(prefix="hub home "))
+write(os.path.join(home, ".claude-plugin", "plugin.json"), json.dumps({"version": "0.0.1"}))
+subprocess.run(["git", "config", "--local", "foreman.home", home], cwd=p5, check=True)
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".claude-plugin", "plugin.json"),
+          encoding="utf-8") as fh:
+    mine = json.load(fh)["version"]
+check("AC_T2_5 a different foreman.home version warns with both versions",
+      f"version 0.0.1 (hub {mine})" in proj(status(t5)[1], "a")["avisos"], proj(status(t5)[1], "a"))
+write(os.path.join(home, ".claude-plugin", "plugin.json"), json.dumps({"version": mine}))
+check("AC_T2_5 the same version: no warning", proj(status(t5)[1], "a")["avisos"] == [])
+t5b = root()
+marker(t5b, "ng")
+check("AC_T2_5 no git repository: no version warning", proj(status(t5b)[1], "ng")["avisos"] == [])
+
+t6 = root()
+marker(t6, "n")
+check("AC_T2_6 no CLAUDE.md: kickoff false", proj(status(t6)[1], "n")["kickoff"] is False)
+
+# T1 leftovers
+t7 = root()
+marker(t7, "S")
+run(t7, "set", "--projeto", "S", "--conta", "c")
+shutil.rmtree(os.path.join(t7, "S"))
+r = run(t7, "status")
+check("LEFT_a text status prints (gone) for a null folder", r.returncode == 0 and "None" not in r.stdout
+      and "(gone)" in r.stdout, out(r))
+r = run(t7, "set", "--projeto", "S", "--conta", "d")
+check("LEFT_b set on a stub without a folder says missing-folder", r.returncode == 1
+      and out(r).startswith("missing-folder"), out(r))
+ok = True
+for body in (b'{"abrir": 5}', b'{"abrir": []}', b'{"bg": "yes"}', b'{"bg": 1}'):
+    t8 = root()
+    reg_bytes(t8, body)
+    r = run(t8, "status")
+    with open(os.path.join(t8, ".superpowers", "hub.json"), "rb") as fh:
+        ok = ok and r.returncode == 2 and "bad-registry" in out(r) and fh.read() == body
+check("LEFT_c a top-level abrir or bg of the wrong type is bad-registry", ok)
 
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")

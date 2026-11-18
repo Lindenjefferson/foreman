@@ -12,8 +12,16 @@ Commands
   remove  --projeto <n>                                       drops a registry entry
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
---sistema nt|posix (default: os.name; the tests pass the last two), and rescans the root first (a write in a folder with a ledger is refused, the root must exist).
-A relative --pasta resolves against the current directory. Exit 0 ok; 1 refusal, the error code first on the message; 2 bad-registry.
+--sistema nt|posix (default: os.name; the tests pass the last two). Every command rescans the root first, and the
+root must be an existing folder. A relative --pasta resolves against the current directory.
+Exit 0 ok; 1 refusal, the error code first on the message; 2 bad-registry.
+
+status runs `ledger.py status --json` (this plugin's own, 30 s timeout) in each project folder that has a ledger:
+"entrega" has the slug, autonomo, pausada, the text of each `ask` step (espera), the open VALIDAR count and what
+is left (tarefas, ciclos). A ledger that fails or is not JSON gives the warning "ledger unreadable" and
+"entrega": null; the other projects are unaffected. A project that waits for the owner comes first. Warnings:
+half-update (.superpowers/atualizar.json), "version X (hub Y)" when the project's `git config foreman.home` holds
+another plugin version than this hub's plugin.json (none without foreman.home or a git repository), missing-folder.
 
 Rules
 -----
@@ -29,13 +37,16 @@ Rules
   keeps it "varredura" and stores only what it sets. A registry that is not a JSON object: exit 2, untouched.
 - Never writes inside a project folder; the only file written is the registry.
 
-Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (init on a folder with
-.superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
+Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (any command but status, in a
+folder with .superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
 argument or a --raiz that is not a folder), bad-registry 2 (nothing was overwritten).
 """
 import argparse, json, os, re, subprocess, sys, tempfile
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+LEDGER = os.path.join(PLUGIN, "skills", "manager", "ledger.py")
+TIMEOUT = 30  # seconds per ledger.py call, so one slow project cannot hang the status
 INSTALL = "claude plugin install foreman@foreman --scope local"
 
 
@@ -57,7 +68,8 @@ def load(raiz):
         with open(p, encoding="utf-8") as f:
             d = json.load(f)
         pr = d.get("projetos", {}) if isinstance(d, dict) else None
-        if not isinstance(pr, dict) or not all(isinstance(e, dict) and all(
+        if not isinstance(d, dict) or not (d.get("abrir") is None or isinstance(d["abrir"], str)) \
+                or not (d.get("bg") is None or isinstance(d["bg"], bool)) or not isinstance(pr, dict) or not all(isinstance(e, dict) and all(
                 isinstance(e[k], str) for k in ("pasta", "conta", "abrir") if e.get(k) is not None)
                 for e in pr.values()):
             raise ValueError("wrong shape")
@@ -127,11 +139,58 @@ def known(raiz, dados):
     return todos, s["avisos"]
 
 
-def resolve(nome, todos):
+def resolve(nome, todos, dados=None):
     n = find(nome or "", todos)
+    if n is None and dados and find(nome or "", dados["projetos"]):
+        raise Refuse("missing-folder", f"the folder of {nome!r} is gone; remove it with remove --projeto")
     if n is None:
         raise Refuse("unknown-project", f"{nome!r} is not a project; known: {', '.join(sorted(todos)) or '(none)'}")
     return n
+
+
+def entrega_de(pasta):
+    """The delivery from `ledger.py status --json` run in the project: None without a ledger, False if unreadable."""
+    if not os.path.isfile(os.path.join(pasta, ".superpowers", "ledger.jsonl")):
+        return None
+    try:
+        r = subprocess.run([sys.executable, LEDGER, "status", "--json"], cwd=pasta, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=TIMEOUT)
+        d = json.loads(r.stdout)
+        if r.returncode != 0 or not isinstance(d, dict):
+            return False
+        sc = d.get("scope") or {}
+        return {"slug": d["slug"], "autonomo": bool(d.get("autonomous")), "pausada": bool(d.get("paused")),
+                "espera": [f"{x.get('task', 'step')} review still fails after {x.get('rounds')} rounds: ask the user"
+                           for x in d.get("steps", []) if x.get("step") == "ask"],
+                "validar": sum(1 for v in d.get("validar", []) if v.get("decision") is None),
+                "faltam": {"tarefas": sc.get("tasks_left", 0), "ciclos": sc.get("cycles_left", 0)}}
+    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError):
+        return False
+
+
+def versao(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)["version"]
+    except (ValueError, KeyError, TypeError, OSError):
+        return None
+
+
+def avisos_de(pasta):
+    """Warnings of a project folder that exists: half-update, a foreman.home of another version."""
+    av = []
+    if os.path.exists(os.path.join(pasta, ".superpowers", "atualizar.json")):
+        av.append("half-update")
+    try:
+        home = subprocess.run(["git", "-C", pasta, "config", "--local", "--get", "foreman.home"],
+                              capture_output=True, text=True, encoding="utf-8", timeout=TIMEOUT).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        home = ""
+    theirs = versao(os.path.join(home, ".claude-plugin", "plugin.json")) if home else None
+    mine = versao(os.path.join(PLUGIN, ".claude-plugin", "plugin.json"))
+    if theirs and mine and theirs != mine:
+        av.append(f"version {theirs} (hub {mine})")
+    return av
 
 
 def listing(raiz, dados):
@@ -140,20 +199,21 @@ def listing(raiz, dados):
     for n in sorted(todos, key=str.casefold):
         pasta, origem = todos[n]
         e = dados["projetos"].get(find(n, dados["projetos"]) or n, {})
-        av = []
-        if not os.path.isdir(pasta):
-            av.append("missing-folder")
-        elif os.path.exists(os.path.join(pasta, ".superpowers", "atualizar.json")):
-            av.append("half-update")
+        av, entrega = ["missing-folder"], None
+        if os.path.isdir(pasta):
+            av, entrega = avisos_de(pasta), entrega_de(pasta)
+            if entrega is False:
+                av, entrega = av + ["ledger unreadable"], None
         projetos.append({"nome": n, "pasta": pasta, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
                          "origem": origem, "kickoff": os.path.isfile(os.path.join(pasta, "CLAUDE.md")),
-                         "avisos": av, "entrega": None, "pedido": e.get("pedido"), "estado": e.get("estado"),
+                         "avisos": av, "entrega": entrega, "pedido": e.get("pedido"), "estado": e.get("estado"),
                          "minutos": None})
     for n, e in sorted(dados["projetos"].items(), key=lambda kv: kv[0].casefold()):
         if not find(n, todos):  # a stub of a scanned project whose folder is gone
             projetos.append({"nome": n, "pasta": None, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
                              "origem": "varredura", "kickoff": False, "avisos": ["missing-folder"], "entrega": None,
                              "pedido": e.get("pedido"), "estado": e.get("estado"), "minutos": None})
+    projetos.sort(key=lambda p: not (p["entrega"] or {}).get("espera"))  # stable: what waits for the owner first
     return {"raiz": raiz, "dono": dados.get("dono"), "avisos": avisos, "projetos": projetos}
 
 
@@ -181,8 +241,14 @@ def cmd_status(a, raiz, dados):
     if not lst["projetos"]:
         print(f"No projects with the plugin under {raiz}. In a project folder, run: {INSTALL}")
     for p in lst["projetos"]:
+        en = p["entrega"]
         extra = [f"conta {p['conta']}"] if p["conta"] else []
-        print(f"{p['nome']} [{p['origem']}] {p['pasta']}" + "".join(f" | {x}" for x in extra + p["avisos"]
+        if en:
+            extra += [f"delivery {en['slug']}"] + [f"waits: {t}" for t in en["espera"]]
+            extra += (["autonomous"] if en["autonomo"] else []) + (["paused"] if en["pausada"] else [])
+            extra += [f"{en['validar']} VALIDAR open"] if en["validar"] else []
+            extra += [f"{en['faltam']['tarefas']} tasks, {en['faltam']['ciclos']} cycles left"]
+        print(f"{p['nome']} [{p['origem']}] {p['pasta'] or '(gone)'}" + "".join(f" | {x}" for x in extra + p["avisos"]
               + ([] if p["kickoff"] else ["no kickoff"])))
 
 
@@ -212,7 +278,7 @@ def cmd_set(a, raiz, dados):
             dados["bg"] = a.bg == "on"
     else:
         todos, _ = known(raiz, dados)
-        n = resolve(a.projeto, todos)
+        n = resolve(a.projeto, todos, dados)
         e = dados["projetos"].setdefault(find(n, dados["projetos"]) or n, {})  # a scanned project gets no "pasta"
         if a.conta is not None:
             e["conta"] = a.conta or None
@@ -244,7 +310,7 @@ def main(argv=None):
     com.add_argument("--raiz", default=os.getcwd())
     com.add_argument("--agora")
     com.add_argument("--sistema", choices=["nt", "posix"], default=os.name)
-    ap = Parser(description=__doc__.split(chr(10))[1])
+    ap = Parser(description=__doc__.split("\n")[1])
     sub = ap.add_subparsers(dest="cmd", required=True, parser_class=Parser)
     sub.add_parser("init", parents=[com]).set_defaults(fn=cmd_init)
     p = sub.add_parser("status", parents=[com])
