@@ -811,6 +811,83 @@ with contextlib.redirect_stderr(err):
 check("FIX_T3_11 the timeout message says the command may still open a window", "may still" in err.getvalue(),
       err.getvalue())
 
+# T4: claim, and the lock leftovers
+c1 = root()
+run(c1, "init")
+for sid in ("s1", "s2", "s1", "s3", "s4", "s5", "s6", "s7"):
+    rc_ = run(c1, "claim", "--sessao", sid)
+reg = json.load(open(os.path.join(c1, ".superpowers", "hub.json"), encoding="utf-8"))
+check("AC_T4 claim sets dono and keeps the last five without duplicates", rc_.returncode == 0 and reg["dono"] == "s7"
+      and reg["sessoes"] == ["s3", "s4", "s5", "s6", "s7"], reg)
+run(c1, "claim", "--sessao", "s3")
+reg = json.load(open(os.path.join(c1, ".superpowers", "hub.json"), encoding="utf-8"))
+check("AC_T4 a repeated id moves to the end", reg["sessoes"] == ["s4", "s5", "s6", "s7", "s3"] and reg["dono"] == "s3", reg)
+c2 = root()
+write(os.path.join(c2, ".superpowers", "ledger.jsonl"), "")
+r = run(c2, "claim", "--sessao", "s1")
+check("AC_T4 claim in a project is is-project", r.returncode == 1 and out(r).startswith("is-project"), out(r))
+c3 = root()
+reg_bytes(c3, b"{broken")
+r = run(c3, "claim", "--sessao", "s1")
+check("AC_T4 claim on a broken registry is bad-registry and leaves it", r.returncode == 2
+      and open(os.path.join(c3, ".superpowers", "hub.json"), "rb").read() == b"{broken", out(r))
+check("AC_T4 claim without a session is usage", run(c1, "claim").returncode == 1)
+reg_bytes(c3, b'{"sessoes": "x"}')
+check("AC_T4 a sessoes of the wrong type is bad-registry", run(c3, "claim", "--sessao", "s1").returncode == 2)
+
+# (a) the lock is removed only by the one that owns it
+c4 = root()
+lk = os.path.join(c4, ".superpowers", "hub.lock")
+with hub.locked(c4):
+    tok = open(lk).read()
+    with open(lk, "w") as fh:
+        fh.write("someone else")
+check("FIX_T4 a lock another process took over is not removed by the old owner", os.path.exists(lk)
+      and tok.strip() != "" and tok != "someone else")
+hub.drop(lk, "not the token")
+check("FIX_T4 drop with another token keeps the file", os.path.exists(lk))
+hub.drop(lk, "someone else")
+check("FIX_T4 drop with the token removes it", not os.path.exists(lk))
+# (b) busy names the file
+with open(lk, "w") as fh:
+    fh.write("held")
+try:
+    with hub.locked(c4, wait=0.1):
+        pass
+    msg = ""
+except hub.Refuse as x:
+    msg = str(x)
+check("FIX_T4 busy names the lock file and says it can be deleted", msg.startswith("busy") and lk in msg
+      and "delete" in msg, msg)
+os.remove(lk)
+# (e) an unwritable folder is not busy
+real_open = os.open
+
+
+def denied(path, *a, **k):
+    if str(path).endswith("hub.lock"):
+        raise PermissionError(13, "denied")
+    return real_open(path, *a, **k)
+
+
+os.open = denied
+try:
+    with hub.locked(c4, wait=5):
+        pass
+    msg = ""
+except hub.Refuse as x:
+    msg = str(x)
+finally:
+    os.open = real_open
+check("FIX_T4 a PermissionError without a lock file is not busy", msg and not msg.startswith("busy"), msg)
+# (c) only a quoted placeholder is refused
+c5 = root()
+check("FIX_T4 a quote followed by a brace that is no placeholder is accepted",
+      run(c5, "set", "--abrir", "echo '{\"a\":1}' {pasta}").returncode == 0)
+check("FIX_T4 the quoted placeholder is still refused", run(c5, "set", "--abrir", "x '{pasta}'").returncode == 1)
+doc = hub.__doc__
+check("FIX_T4 the docstring has busy and the longer-quoted-string example", "busy 1" in doc and "'cd {pasta}/sub'" in doc)
+
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")
 sys.exit(1 if failed else 0)

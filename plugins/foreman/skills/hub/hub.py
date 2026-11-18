@@ -13,6 +13,8 @@ Commands
   set     --projeto <n> --estado respondido                   the owner saw the project answer
   delegate --projeto <n> [--nao-entregue]                     stores the request (text on stdin, first 200 chars)
   abrir   --projeto <n> [--mostrar]                           opens the project's session; --mostrar only prints
+  claim   --sessao <id>                                       makes the session the owner (dono) of the hub; only
+                                                              session-start.py calls it. sessoes keeps the last five
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
 --sistema nt|posix (default: os.name; the tests pass the last two). Every command except init and a global set
@@ -53,13 +55,16 @@ else, as an argument list without a shell, `wt.exe -w new -d <pasta> claude --pe
 (PowerShell Start-Process when wt.exe is not in PATH) or `claude --bg --permission-mode auto -n <nome>` when bg is on
 (project, else global) and, on posix with no abrir, as a fallback with a warning. A non-zero exit, a command that is
 not found or the timeout is open-failed, with the command and its output. With bg off and no abrir, posix refuses.
-Never quote a placeholder in an abrir template ('{pasta}' breaks): hub.py already quotes it, and set/add refuse it. Under
+Never quote a placeholder in an abrir template ('{pasta}' breaks): hub.py already quotes it, and set/add refuse it.
+A placeholder inside a longer quoted string breaks the same way and is not detected ('cd {pasta}/sub'). Under
 Git for Windows sh, a value starting with / is rewritten as an MSYS path. wt.exe has `;` as its own separator, so a ;
-in the folder is escaped. Writing commands hold <root>/.superpowers/hub.lock (a lock older than 30 s is taken over). "bg" in status is that effective value.
+in the folder is escaped. Writing commands hold <root>/.superpowers/hub.lock, which holds its owner's token (a lock older than 30 s is taken
+over; a lock is only ever removed by the token that wrote or read it). "bg" in status is that effective value.
 
 Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (any command but status, in a
 folder with .superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
-argument or a --raiz that is not a folder), open-failed 1, half-update 1, bad-registry 2 (nothing was overwritten).
+argument or a --raiz that is not a folder), open-failed 1, half-update 1, busy 1 (hub.lock stayed held for 10 s; the message names the file,
+which can be deleted when no hub command is running), bad-registry 2 (nothing was overwritten).
 """
 import argparse, contextlib, datetime, json, os, re, shlex, shutil, subprocess, sys, tempfile, time
 
@@ -86,6 +91,10 @@ def valid(d):
     if not isinstance(d, dict) or not isinstance(d.get("projetos", {}), dict):
         return False
     if not (d.get("abrir") is None or isinstance(d["abrir"], str)):
+        return False
+    if not (d.get("dono") is None or isinstance(d["dono"], str)):
+        return False
+    if not isinstance(d.get("sessoes", []), list) or not all(isinstance(x, str) for x in d.get("sessoes", [])):
         return False
     if not (d.get("bg") is None or isinstance(d["bg"], bool)):
         return False
@@ -144,36 +153,53 @@ def save(raiz, dados):
         raise
 
 
+def drop(path, token):
+    """Removes the lock file only while it still holds token: a taken-over lock is never deleted by its old owner."""
+    for _ in range(100):  # a waiter's stat can hold the file for a moment on Windows
+        try:
+            with open(path, encoding="utf-8") as f:
+                if f.read() != token:
+                    return
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(0.05)
+
+
 @contextlib.contextmanager
 def locked(raiz, wait=10, stale=30):
     """One writer at a time: <root>/.superpowers/hub.lock, created exclusively, retried for ~10 s, removed after."""
     path = os.path.join(raiz, ".superpowers", "hub.lock")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    end = time.time() + wait
+    token = f"{os.getpid()} {os.urandom(8).hex()}"
+    end, denied = time.time() + wait, 0
     while True:
         try:
             fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             break
-        except (FileExistsError, PermissionError):  # Windows says "denied" for a file that is being deleted
-            pass
+        except FileExistsError:
+            denied = 0
+        except PermissionError as x:  # Windows says "denied" for a file that is being deleted; with no file, retry briefly
+            denied = 0 if os.path.exists(path) else denied + 1
+            if denied > 20:
+                raise Refuse("usage", f"cannot create {path}: {x}")
         with contextlib.suppress(OSError):
-            if time.time() - os.path.getmtime(path) > stale:  # shortcut: two takers can race, one just retries
-                os.remove(path)
+            if time.time() - os.path.getmtime(path) > stale:
+                with open(path, encoding="utf-8") as f:
+                    old = f.read()
+                # drop() deletes only the content just read, so a lock another taker already replaced stays
+                drop(path, old)
         if time.time() > end:
-            raise Refuse("busy", "another hub command holds hub.lock; try again")
+            raise Refuse("busy", f"another hub command holds {path}; if no hub command is running, delete that file")
         time.sleep(0.05)
     try:
-        os.close(fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(token)
         yield
     finally:
-        for _ in range(100):  # a waiter's stat can hold the file for a moment on Windows
-            try:
-                os.remove(path)
-                break
-            except FileNotFoundError:
-                break
-            except OSError:
-                time.sleep(0.05)
+        drop(path, token)
 
 
 def marked(path, avisos, nome):
@@ -397,7 +423,7 @@ def cmd_status(a, raiz, dados):
 
 
 def template(abrir):
-    if abrir and ("'{" in abrir or '"{' in abrir):
+    if abrir and re.search(r"['\"]\{(pasta|nome|conta)\}", abrir):
         raise Refuse("usage", "do not quote the placeholders in abrir: hub.py quotes {pasta}, {nome} and {conta}")
 
 
@@ -441,6 +467,14 @@ def cmd_set(a, raiz, dados):
             e["bg"] = a.bg == "on"
         if a.estado:
             e["estado"] = a.estado
+    save(raiz, dados)
+
+
+def cmd_claim(a, raiz, dados):
+    if not a.sessao.strip():
+        raise Refuse("usage", "--sessao must not be empty")
+    dados["dono"] = a.sessao
+    dados["sessoes"] = ([x for x in dados.get("sessoes", []) if x != a.sessao] + [a.sessao])[-5:]
     save(raiz, dados)
 
 
@@ -599,6 +633,9 @@ def main(argv=None):
     p.add_argument("--projeto", required=True)
     p.add_argument("--mostrar", action="store_true")
     p.set_defaults(fn=cmd_abrir)
+    p = sub.add_parser("claim", parents=[com])
+    p.add_argument("--sessao", required=True)
+    p.set_defaults(fn=cmd_claim)
     p = sub.add_parser("remove", parents=[com])
     p.add_argument("--projeto", required=True)
     p.set_defaults(fn=cmd_remove)
@@ -620,7 +657,7 @@ def main(argv=None):
             a.texto = sys.stdin.read(4096)
             if not a.texto.strip():
                 raise Refuse("usage", "the request text comes on stdin and is empty")
-        if a.cmd in ("init", "add", "set", "remove", "delegate"):
+        if a.cmd in ("init", "add", "set", "remove", "delegate", "claim"):
             with locked(raiz):  # load, change and save as one step
                 a.fn(a, raiz, load(raiz))
         else:

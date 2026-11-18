@@ -126,6 +126,59 @@ check("atualizar: with a ledger, the ledger output comes first and unchanged, th
       r.stdout == "Delivery ledger (resumed session), `ledger.py status`:\n" + upd_status + want + "\n",
       r.stdout + r.stderr)
 
+# A folder with .superpowers/hub.json is a foreman hub: the hook claims it and prints the hub status.
+hubdir = tempfile.mkdtemp(prefix="sessionstart_hub_")
+REG = os.path.join(hubdir, ".superpowers", "hub.json")
+os.makedirs(os.path.dirname(REG))
+EMPTY = json.dumps({"abrir": None, "bg": None, "projetos": {}})
+
+
+def reg(text=EMPTY):
+    with open(REG, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+def hub(source, sid="s1", cwd=None):
+    payload = {"hook_event_name": "SessionStart", "source": source, "cwd": cwd or hubdir}
+    if sid:
+        payload["session_id"] = sid
+    return run(hubdir, payload=payload)
+
+
+def read_reg():
+    with open(REG, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+reg()
+r = hub("startup")
+first = r.stdout.splitlines()[0] if r.stdout else ""
+check("hub: startup opens with the hub line and then the status", r.returncode == 0 and "hub" in first
+      and "kickoff" in first and "No projects with the plugin" in r.stdout and r.stderr == "", r.stdout + r.stderr)
+check("hub: startup makes the session the owner", read_reg().get("dono") == "s1", str(read_reg()))
+r = hub("compact", "s9")
+check("hub: compact prints the status and keeps the owner", "No projects with the plugin" in r.stdout
+      and read_reg()["dono"] == "s1", r.stdout + str(read_reg()))
+hub("resume", "s2")
+check("hub: resume takes over", read_reg()["dono"] == "s2" and read_reg()["sessoes"] == ["s1", "s2"], str(read_reg()))
+for n in range(3, 8):
+    hub("startup", f"s{n}")
+check("hub: seven sessions keep the last five", read_reg()["sessoes"] == ["s3", "s4", "s5", "s6", "s7"], str(read_reg()))
+before = open(REG, "rb").read()
+r = hub("startup", sid=None)
+check("hub: no session_id leaves the file alone and still prints", r.returncode == 0 and open(REG, "rb").read() == before
+      and "No projects with the plugin" in r.stdout, r.stdout + r.stderr)
+reg("{broken")
+r = hub("startup", "s8")
+check("hub: invalid hub.json exits 0, untouched, no traceback", r.returncode == 0 and open(REG, "rb").read() == b"{broken"
+      and "Traceback" not in r.stdout + r.stderr, r.stdout + r.stderr)
+sub_hub = os.path.join(hubdir, "sub")
+os.makedirs(sub_hub)
+reg()
+r = hub("startup", "s1", cwd=sub_hub)
+check("hub: a subfolder is not the hub", r.stdout == "" and "dono" not in read_reg(), r.stdout)
+
+
 config = json.load(open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8"))
 groups = config["hooks"]["SessionStart"]
 check("hooks.json registers session-start.py for every session start", len(groups) == 1
