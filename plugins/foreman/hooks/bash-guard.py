@@ -30,9 +30,12 @@ passes), a git merge while it is checked out (--abort and --quit pass), and a pu
 mr merge or accept, also behind the tool's own options, and its api on pulls/<n>/merge or merge_requests/<n>/merge). A
 git checkout or switch earlier in the same command counts as what is checked out for the rest of it (a checkout with
 -- or of a word that is no branch here restores files and changes nothing). Each step is read in the repository it
-runs in, in any session: the folder of its git -C, else of the latest cd to a rooted path before it, else the
-session's directory (a relative cd is not followed); that repository's default branch, checked-out branch, ledger
-mode and standing approval decide, as if the command ran there. Pushing and merging the work branch pass; in supervised mode, or with no ledger, nothing here is
+runs in, in any session, with that repository's default branch, checked-out branch, ledger mode and standing
+approval, as if the command ran there. A rooted path decides alone: a git -C (every -C joined to the one before it,
+as git does), --git-dir, --work-tree, or GIT_DIR or GIT_WORK_TREE set before it (a prefix or an export). Otherwise
+the step is read both in the folder of the latest cd to a rooted path before it and in the session's directory, and
+the stricter answer wins (deny, then ask): a cd the guard does not follow (popd, cd -, a relative cd, one inside ( )
+or $( )) cannot move the check away from the session's repository. Pushing and merging the work branch pass; in supervised mode, or with no ledger, nothing here is
 denied, and a push of the default branch (the same reading) asks the user: approval 2 is theirs, and a push of a work
 branch passes, since a permission rule cannot tell them apart inside a compound command. With the user's standing
 approval (ledger.py approve, read from approval.json beside the ledger), a publish passes when what it publishes is a
@@ -44,23 +47,32 @@ push with --all, --mirror or --delete is still denied.
 
 Skipping the hook is denied in any project, in the foreground or background: a git commit with --no-verify (or an
 unambiguous prefix such as --no-veri) or -n (also inside a cluster such as -nm or -an), a git -c or --config-env that
-sets core.hooksPath, a GIT_CONFIG_* assignment naming it (also through env or export), and a git config that writes or
+sets core.hooksPath or an alias (an alias can hide any subcommand), a GIT_CONFIG_* assignment naming it (also through env or export), and a git config that writes or
 unsets it. The command is read word by word as the shell splits it, after the heredoc bodies the shell only passes
 along are removed, so a flag quoted inside a commit message is a message, not a flag. Wrappers such as env, command,
 time, nohup, xargs, `!`, `{` and if/then are looked through; a command given to a shell's -c (also -lc, and after
-options that take a value, such as -o pipefail) or to eval is read the same way (a script the shell runs is a command
+options that take a value, such as -o pipefail), to powershell, pwsh or cmd (whichever tool runs it) or to
+eval is read the same way (a script the shell runs is a command
 of its own), and so is a command substitution outside quotes; one inside double quotes is not read. Permission rules
 match the command as plain text and cannot tell a flag from a message, which is why this check lives here. A command
 that does not parse (an unbalanced quote) passes, since the shell refuses it too.
 
 A foreman hub session (its payload session_id in "sessoes" of the .superpowers/hub.json found from the session's
 directory upwards, valid by hub.py's own check, and with no .superpowers/ledger.jsonl beside it: there the project
-wins) only reads and delegates. Denied in it, in the foreground or background, git -C included: git commit, merge,
-push, cherry-pick, rebase and init; any ledger.py command but status; gate.py; pre-commit-secret-scan.py
---install-pre-commit (the first writing steps of a kickoff). The reason reads "hub session: <step> belongs to the
-project's session". A hub session that is not the "dono" (another hub session took over this root) is also denied
-hub.py delegate, add, set, remove and init; status and abrir pass. hub.py claim is denied in every session, since
-only the SessionStart hook runs it. Without a session_id, or with an invalid hub.json, the session is no hub session.
+wins; links and junctions resolved) only reads and delegates. Denied in it, in the foreground or background, git -C
+included: any git outside the read-only list (status, log, diff, show, rev-parse, ls-files, describe, shortlog,
+blame, grep, cat-file, for-each-ref, merge-base, name-rev; remote alone or -v; branch with no name or with --list;
+config --get, --get-all or --list; symbolic-ref with one name; worktree list; stash list; tag alone or -l), so
+commit, merge, push, fetch, pull, reset and init too; any ledger.py command but status; gate.py;
+pre-commit-secret-scan.py --install-pre-commit (the first writing steps of a kickoff). A script counts when it runs:
+as the program, as the script of python, py, sh or bash (also through python.sh), or as python -m <name>; reading
+its file (cat, grep, ls) passes. The reason reads "hub session: <step> belongs to the project's session". A hub
+session that is not the "dono" is denied hub.py delegate, add, set, remove and init ("another hub session took over
+this root"); status and abrir pass. In any session, those writing commands are denied when the root they name
+(--raiz, else the session's directory) has a valid hub.json whose dono is another session; init where there is none
+passes. hub.py claim is denied in every session, since only the SessionStart hook runs it. Without a session_id, or
+with an invalid hub.json, the session is no hub session; a hub.json or hub.py that fails to load leaves the rest of
+the guard on.
 
 A PowerShell call goes through the same checks, read with PowerShell's own rules. Text the command only passes
 along: single quotes literal ('' an escaped quote), double quotes with a backtick escape, the typographic quotes as
@@ -319,10 +331,12 @@ def ps_segments(command):
 
 
 def hooks_path(key):
-    return key.split("=", 1)[0].lower() == "core.hookspath"
+    """True for a config key that can skip the hook: core.hooksPath, or an alias (an alias can hide any subcommand)."""
+    name = key.split("=", 1)[0].lower()
+    return name == "core.hookspath" or name.startswith("alias.")
 
 
-PS_COMMAND_FLAGS = ("/c", "/k", "/r")
+PS_COMMAND_FLAGS = ("/c", "/k", "/r", "//c", "//k")  # //c: cmd's /c as Git Bash passes it
 
 
 def ps_inner(words):
@@ -375,21 +389,21 @@ def simple_commands(command, powershell=False):
         if not words:
             continue
         program = program_name(words[0])
-        if powershell and program in PS_SHELLS:
+        if program in PS_SHELLS:  # read whatever the tool: a Bash call can run PowerShell and the reverse
             inner = ps_inner(words)
             if inner:
                 yield from simple_commands(inner, True)
         elif powershell and program in PS_LAUNCHERS:
             parts = [part for word in words[1:] if not word.startswith("-")
-                     for part in word.split(",") if part]
+                     for part in re.split(r"[,\s]+", word) if part]
             if parts:
                 yield program_name(parts[0]), parts[1:], parts
-        elif not powershell and program in SHELLS:
+        elif program in SHELLS:
             position = 1
             while position < len(words) - 1:
                 word = words[position]
                 if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", word):
-                    yield from simple_commands(words[position + 1], powershell)
+                    yield from simple_commands(words[position + 1])
                     break
                 if not word.startswith(("-", "+")):
                     yield program, words[1:], segment  # a script the shell runs
@@ -401,6 +415,9 @@ def simple_commands(command, powershell=False):
             yield program, words[1:], segment
 
 
+GIT_VALUE = ("-C", "--git-dir", "--work-tree", "--namespace", "--attr-source")
+
+
 def git_command(arguments):
     """The git subcommand and its arguments, past git's own options, and whether those options set core.hooksPath."""
     rest, override = list(arguments), False
@@ -409,7 +426,7 @@ def git_command(arguments):
         if option in ("-c", "--config-env"):
             override = override or hooks_path(attached or (rest[1] if len(rest) > 1 else ""))
             rest = rest[1:] if attached else rest[2:]
-        elif option in ("-C", "--git-dir", "--work-tree", "--namespace") and not attached:
+        elif option in GIT_VALUE and not attached:
             rest = rest[2:]
         else:
             rest = rest[1:]
@@ -557,57 +574,100 @@ def merges_pull_request(arguments):
         and any(re.search(r"(pulls|merge_requests)/\d+/merge\b", word) for word in arguments))
 
 
+GIT_PLACE = re.compile(r"GIT_(DIR|WORK_TREE)=(.*)")
+
+
+def git_folders(arguments, places, bases):
+    """The folders a git step may run in. Every -C joins the one before it, as git does, and --git-dir, --work-tree
+    and GIT_DIR or GIT_WORK_TREE (places) name the repository the same way; a rooted path decides alone, a relative
+    one joins each base (the folder cd tracking gives and the session's: the stricter answer wins, see reaches_main)."""
+    paths, place, rest = [], dict(places), list(arguments)
+    while rest and rest[0].startswith("-"):
+        option, sep, value = rest[0].partition("=")
+        if option in GIT_VALUE and not sep:
+            value, rest = (rest[1] if len(rest) > 1 else ""), rest[2:]
+        else:
+            rest = rest[1:]
+        if option == "-C":
+            paths.append(value)
+        elif option in ("--git-dir", "--work-tree"):
+            place["DIR" if option == "--git-dir" else "WORK_TREE"] = value
+    named = place.get("WORK_TREE") or place.get("DIR")
+    if named:
+        paths.append(named)
+    for path in paths:
+        bases = [folder_of(path, base) for base in (["/"] if ROOTED.match(path) else bases)]
+    found = []
+    for folder in bases:
+        folder = os.path.abspath(folder)
+        if os.path.basename(folder) == ".git":
+            folder = os.path.dirname(folder)
+        if os.path.isdir(folder) and folder not in found:
+            found.append(folder)
+    return found
+
+
 def reaches_main(command, cwd, powershell=False):
     """Returns "deny" in autonomous mode when the command merges into or pushes the default branch, or merges a pull
     request; "ask" for the same commands otherwise (supervised, or no ledger); None when neither. Each step is read
-    in its own repository: its git -C folder, else the latest rooted cd before it, else cwd. A git checkout or switch
-    earlier in the same command counts as the branch checked out there for what follows it."""
-    calls, where = [], os.path.abspath(cwd)
-    for program, arguments, _ in simple_commands(command, powershell):
-        if program.lower() in CHANGES_DIRECTORY:
+    in each repository it may run in (git_folders), and the stricter answer wins. A git checkout or switch earlier
+    in the same command counts as the branch checked out there for what follows it."""
+    cwd = os.path.abspath(cwd)
+    calls, where, places = [], cwd, {}
+    for program, arguments, segment in simple_commands(command, powershell):
+        if program == "export":
+            places.update(match.groups() for match in map(GIT_PLACE.fullmatch, arguments) if match)
+        elif program.lower() in CHANGES_DIRECTORY:
             target = next((word for word in arguments if not word.startswith("-")), None)
             if target and ROOTED.match(target) and os.path.isdir(folder_of(target, where)):
                 where = os.path.abspath(folder_of(target, where))
         elif program == "git":
             name, rest, _ = git_command(arguments)
-            named = next((after for word, after in zip(arguments, arguments[1:]) if word == "-C"), None)
-            folder = os.path.abspath(folder_of(named, where)) if named else where
+            start = next((i for i, word in enumerate(segment) if program_name(word) == "git"), 0)
+            local = dict(places)
+            local.update(match.groups() for match in map(GIT_PLACE.fullmatch, segment[:start]) if match)
             if name in ("push", "merge", "checkout", "switch"):
-                calls.append((program, name, rest, folder if os.path.isdir(folder) else where))
+                calls.append((program, name, rest, git_folders(arguments, local, list(dict.fromkeys([where, cwd])))))
         elif program in ("gh", "glab"):
-            calls.append((program, "", arguments, where))
+            calls.append((program, "", arguments, list(dict.fromkeys([where, cwd]))))
     if not any(name in ("push", "merge") or (program != "git" and merges_pull_request(rest))
                for program, name, rest, _ in calls):
         return None
-    repos = {}
-    for program, name, rest, folder in calls:
-        if folder not in repos:
-            state = ledger_state(folder)
-            repos[folder] = {"state": state, "autonomous": bool(state) and state[0].autonomous(state[2]),
-                             "main": main_branch(folder), "current": git_out(folder, "branch", "--show-current"),
-                             "published": set()}
-        repo = repos[folder]
-        state, autonomous, main, current = repo["state"], repo["autonomous"], repo["main"], repo["current"]
-        if program != "git":
-            if merges_pull_request(rest) and not autonomous:
-                return "ask"
-            if autonomous and merges_pull_request(rest) and not gated(folder, "HEAD", state):
-                return "deny"
-        elif name in ("checkout", "switch"):
-            repo["current"] = switched_to(name, rest, folder) or current
-        elif main and name == "push" and push_reaches(rest, main, current):
-            if not autonomous:
-                return "ask"
-            sources = push_sources(rest, main, current)
-            if sources is None or not all(source in repo["published"] or gated(folder, source, state)
-                                          for source in sources):
-                return "deny"
-        elif main and name == "merge" and current == main and not {"--abort", "--quit"} & set(rest):
-            if not autonomous:
-                return "ask"
-            if not gated(folder, merged_ref(rest), state):
-                return "deny"
-            repo["published"].add(main)
+    repos, verdicts = {}, set()
+    for program, name, rest, folders in calls:
+        for folder in folders:
+            if folder not in repos:
+                state = ledger_state(folder)
+                repos[folder] = {"state": state, "autonomous": bool(state) and state[0].autonomous(state[2]),
+                                 "main": main_branch(folder), "current": git_out(folder, "branch", "--show-current"),
+                                 "published": set()}
+            verdicts.add(publish_verdict(program, name, rest, folder, repos[folder]))
+    return "deny" if "deny" in verdicts else "ask" if "ask" in verdicts else None
+
+
+def publish_verdict(program, name, rest, folder, repo):
+    """"deny", "ask" or None for one step in one repository; a checkout or switch moves repo["current"]."""
+    state, autonomous, main, current = repo["state"], repo["autonomous"], repo["main"], repo["current"]
+    if program != "git":
+        if merges_pull_request(rest) and not autonomous:
+            return "ask"
+        if autonomous and merges_pull_request(rest) and not gated(folder, "HEAD", state):
+            return "deny"
+    elif name in ("checkout", "switch"):
+        repo["current"] = switched_to(name, rest, folder) or current
+    elif main and name == "push" and push_reaches(rest, main, current):
+        if not autonomous:
+            return "ask"
+        sources = push_sources(rest, main, current)
+        if sources is None or not all(source in repo["published"] or gated(folder, source, state)
+                                      for source in sources):
+            return "deny"
+    elif main and name == "merge" and current == main and not {"--abort", "--quit"} & set(rest):
+        if not autonomous:
+            return "ask"
+        if not gated(folder, merged_ref(rest), state):
+            return "deny"
+        repo["published"].add(main)
     return None
 
 
@@ -638,75 +698,142 @@ def commit_skips(arguments):
 UNATTENDED = {"auto", "bypassPermissions"}
 
 
-def script_words(segment, name):
-    """The words after the script called name in the segment (past ledger.py's --ledger), or None without it."""
-    words = [word for word in segment if word]
-    found = [i for i, word in enumerate(words) if os.path.basename(word.replace("\\", "/")).lower() == name]
-    if not found:
+INTERPRETER = re.compile(r"python[\d.]*w?|py|sh|bash|zsh|dash")
+PYTHON_VALUE = {"-W", "-X", "-Q"}
+
+
+def script_args(program, arguments, name):
+    """The arguments of the script called name (ledger.py, gate.py, hub.py) when the step runs it: as the program
+    itself, or as the script an interpreter runs (python, py, sh, bash, also through python.sh), python -m <name>
+    included; past ledger.py's --ledger. None when the step does not run it (cat ledger.py, python -c ...)."""
+    if program == name:
+        rest = list(arguments)
+    elif INTERPRETER.fullmatch(program):
+        position, rest = 0, None
+        while position < len(arguments):
+            word = arguments[position]
+            if word == "-m":
+                if arguments[position + 1:position + 2] != [name[:-len(".py")]]:
+                    return None
+                rest = arguments[position + 2:]
+                break
+            if word == "-c":
+                return None
+            if word.startswith("-"):
+                position += 2 if word in PYTHON_VALUE else 1
+            elif program_name(word) == "python.sh":
+                position += 1
+            else:
+                rest = arguments[position + 1:] if program_name(word) == name else None
+                break
+        if rest is None:
+            return None
+    else:
         return None
-    rest = words[found[0] + 1:]
     while rest and rest[0].startswith("--ledger"):
         rest = rest[1:] if "=" in rest[0] else rest[2:]
-    return rest
+    return list(rest)
 
 
 def starts_delivery(command, powershell=False):
     """True when the command runs ledger.py start (also start --next): the delivery begins there."""
-    return any((script_words(segment, "ledger.py") or [])[:1] == ["start"]
-               for _, _, segment in simple_commands(command, powershell))
+    return any((script_args(program, arguments, "ledger.py") or [])[:1] == ["start"]
+               for program, arguments, _ in simple_commands(command, powershell))
+
+
+def hub_registry(folder):
+    """The hub.json of folder when hub.py's own valid() accepts it, else None; any failure (a file that does not
+    parse, nested too deep, a hub.py that is missing or broken) is None, so the rest of the guard still runs."""
+    try:
+        with open(os.path.join(folder, ".superpowers", "hub.json"), encoding="utf-8") as handle:
+            data = json.load(handle)
+        spec = importlib.util.spec_from_file_location("foreman_hub", HUB)
+        hub = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(hub)
+        return data if hub.valid(data) else None
+    except (Exception, SystemExit):
+        return None
 
 
 def hub_session(cwd, session_id):
-    """"owner" or "former" when session_id is in sessoes of the hub.json found from cwd upwards; None with no
-    session_id, no hub.json, an invalid one (hub.py's own valid()) or one beside a ledger: the project wins."""
+    """"owner" or "former" when session_id is in sessoes of the hub.json found from cwd upwards (links and junctions
+    resolved); None with no session_id, no hub.json, an invalid one or one beside a ledger: the project wins."""
     if not isinstance(session_id, str) or not session_id:
         return None
-    folder = os.path.abspath(cwd)
+    folder = os.path.realpath(cwd)
     while not os.path.isfile(os.path.join(folder, ".superpowers", "hub.json")):
         if os.path.dirname(folder) == folder:
             return None
         folder = os.path.dirname(folder)
     if os.path.exists(os.path.join(folder, ".superpowers", "ledger.jsonl")):
         return None
-    spec = importlib.util.spec_from_file_location("foreman_hub", HUB)
-    hub = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(hub)
-    try:
-        with open(os.path.join(folder, ".superpowers", "hub.json"), encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
-        return None
-    if not hub.valid(data) or session_id not in data.get("sessoes", []):
+    data = hub_registry(folder)
+    if not data or session_id not in data.get("sessoes", []):
         return None
     return "owner" if data.get("dono") == session_id else "former"
 
 
-HUB_GIT = {"commit", "merge", "push", "cherry-pick", "rebase", "init"}
+HUB_COMMANDS = {"init", "status", "add", "set", "remove", "delegate", "abrir", "claim"}
 HUB_WRITES = {"delegate", "add", "set", "remove", "init"}
+GIT_READS = {"status", "log", "diff", "show", "rev-parse", "ls-files", "describe", "shortlog", "blame", "grep",
+             "cat-file", "for-each-ref", "merge-base", "name-rev", "help", "version", ""}
+BRANCH_READS = {"-a", "-r", "-v", "-vv", "--all", "--remotes", "--verbose", "--list", "-l", "--show-current"}
+CONFIG_WRITES = {"--add", "--replace-all", "--unset", "--unset-all", "--rename-section", "--remove-section", "--edit",
+                 "-e", "set", "unset", "rename-section", "remove-section", "edit"}
+TOOK_OVER = ("another hub session took over this root: only the newest hub session writes the registry. This one "
+             "still reads (hub.py status) and opens projects (hub.py abrir); work from the newest hub window.")
 
 
-def hub_denial(command, powershell, role):
-    """Why a hub session (role "owner" or "former", None for any other session) may not run the command, or None.
-    hub.py claim is denied in every session: only the SessionStart hook runs it."""
-    for program, arguments, segment in simple_commands(command, powershell):
-        hub = script_words(segment, "hub.py")
-        if hub is not None and hub[:1] == ["claim"]:
+def git_reads(name, rest):
+    """True for the git a hub session may run: it only reads. Everything else writes or can (fetch . x:main)."""
+    positional = [word for word in rest if not word.startswith("-")]
+    if name in GIT_READS:
+        return True
+    if name == "remote":
+        return rest in ([], ["-v"], ["--verbose"])
+    if name == "branch":
+        return all(word in BRANCH_READS for word in rest if word.startswith("-")) \
+            and (not positional or bool({"--list", "-l"} & set(rest)))
+    if name == "config":
+        return bool(CONFIG_READS & set(rest)) and not CONFIG_WRITES & set(rest)
+    if name == "symbolic-ref":
+        return len(positional) <= 1 and not {"-d", "--delete"} & set(rest)
+    if name in ("worktree", "stash"):
+        return rest[:1] == ["list"]
+    if name == "tag":
+        return not rest or bool({"-l", "--list"} & set(rest)) and not {"-d", "--delete", "-f", "-a", "-s", "-m"} & set(rest)
+    return False
+
+
+def hub_denial(command, powershell, role, cwd, session_id):
+    """Why the command may not run, or None: a hub session (role "owner" or "former", None for any other) only reads
+    and delegates; a registry that exists is written only by its dono; hub.py claim runs only from SessionStart."""
+    for program, arguments, _ in simple_commands(command, powershell):
+        hub = script_args(program, arguments, "hub.py")
+        sub = next((word for word in hub or [] if word in HUB_COMMANDS), None)
+        if sub == "claim":
             return ("hub.py claim is run only by the SessionStart hook: a session becomes the hub's owner by "
                     "starting or resuming in the hub folder.")
+        if sub in HUB_WRITES:
+            if role == "former":
+                return TOOK_OVER
+            raiz = next((after for word, after in zip(hub, hub[1:]) if word == "--raiz"), None) or next(
+                (word.split("=", 1)[1] for word in hub if word.startswith("--raiz=")), None)
+            data = hub_registry(folder_of(raiz, cwd) if raiz else cwd)
+            if data and data.get("dono") != session_id:
+                return TOOK_OVER if session_id in data.get("sessoes", []) else (
+                    f"hub.py {sub} writes a hub's registry, and only that hub's owner session (its newest hub "
+                    "window) writes it; ask there.")
         if role is None:
             continue
-        if role == "former" and hub is not None and hub[:1] and hub[0] in HUB_WRITES:
-            return ("another hub session took over this root: only the newest hub session writes the registry. "
-                    "This one still reads (hub.py status) and opens projects (hub.py abrir); work from the newest "
-                    "hub window.")
-        ledger, step = script_words(segment, "ledger.py"), None
-        if program == "git" and git_command(arguments)[0] in HUB_GIT:
+        ledger, step = script_args(program, arguments, "ledger.py"), None
+        if program == "git" and not git_reads(*git_command(arguments)[:2]):
             step = "git " + git_command(arguments)[0]
         elif ledger is not None and ledger[:1] != ["status"]:
             step = " ".join(["ledger.py"] + ledger[:1])
-        elif script_words(segment, "gate.py") is not None:
+        elif script_args(program, arguments, "gate.py") is not None:
             step = "gate.py"
-        elif "--install-pre-commit" in segment and script_words(segment, "pre-commit-secret-scan.py") is not None:
+        elif "--install-pre-commit" in (script_args(program, arguments, "pre-commit-secret-scan.py") or []):
             step = "pre-commit-secret-scan.py --install-pre-commit"
         if step:
             return (f"hub session: {step} belongs to the project's session. The hub only reads and delegates: send "
@@ -804,7 +931,11 @@ def main():
     mode = payload.get("permission_mode")
     found = {}
     commands = lambda folder: found.setdefault(folder, project_commands(folder))
-    hub_reason = hub_denial(command, powershell, hub_session(cwd, payload.get("session_id")))
+    try:  # a hub.json or hub.py that fails never switches off the rest of the guard
+        role = hub_session(cwd, payload.get("session_id"))
+    except Exception:
+        role = None
+    hub_reason = hub_denial(command, powershell, role, cwd, payload.get("session_id"))
     if not hub_reason and mode and mode not in UNATTENDED and starts_delivery(command, powershell):
         json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                                           "permissionDecisionReason": (
@@ -817,7 +948,8 @@ def main():
     if hub_reason:
         reason = hub_reason
     elif skips:
-        reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n or a core.hooksPath override), and a "
+        reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n, a core.hooksPath override or a git -c "
+                  "alias), and a "
                   "secret committed stays in the history. Commit without it; if the hook blocks, fix what it reports "
                   "(a false positive is allowlisted by the user, as its message explains).")
     elif publishes == "deny":

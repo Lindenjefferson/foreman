@@ -482,7 +482,7 @@ for sub_command in WRITES:
           str(run(hub_root, command, session="h1")))
     check(f"AC_T5_4 the owner writes the registry: {sub_command!r}", run(hub_root, command, session="h2")[1] is None,
           str(run(hub_root, command, session="h2")))
-check("AC_T5_4 in PowerShell too", hub_denied(f"& python {PY}/hub/hub.py delegate --projeto proj", session="h1",
+check("AC_T5_4 in PowerShell too", hub_denied(f"& {PY}/hub/hub.py delegate --projeto proj", session="h1",
                                               tool="PowerShell", text="took over"))
 for sub_command in ("status", "status --json", "abrir --projeto proj"):
     check(f"AC_T5_4 a former hub session still reads and opens: {sub_command!r}",
@@ -531,6 +531,143 @@ check("AC_T5_7 the target, not the session's folder: from a supervised repo, an 
 for command in (f'git -C "{autonomous}" push origin feat/x', f'cd "{autonomous}" && git status',
                 f'git -C "{outside}" push origin main'):
     check(f"AC_T5_7 passes {command!r}", run(outside, command)[1] is None, str(run(outside, command)))
+
+# T5 fix round 1 (the review probe rows)
+import shutil
+
+
+def decision(folder, command, **kw):
+    return (run(folder, command, **kw)[1] or ("pass",))[0]
+
+
+hub_json(json.dumps({"abrir": None, "bg": None, "projetos": {}, "dono": "h2", "sessoes": ["h1", "h2"]}))
+outs = outside.replace(os.sep, "/")
+# 1. a step whose folder comes from cd tracking is judged against the tracked folder and the session's: the stricter
+auto_name = os.path.basename(autonomous)
+for command in (f"pushd {outs}; popd; git push origin main", f"(cd {outs} && ls); git push origin main",
+                f"ls $(cd {outs} && pwd); git merge feat/x", f"cd {outs} && cd ../{auto_name} && git push origin main",
+                f"git -C {outs} -C {autonomous} push origin main", f"cd {outs}; cd -; git push origin main",
+                f"cd {outs} && gh pr merge 1", f"(cd {outs}); git merge feat/x"):
+    check(f"FIX1_T5 a cd the guard cannot follow keeps the session's own repository: denied {command!r}",
+          decision(autonomous, command) == "deny", str(run(autonomous, command)))
+check("FIX1_T5 PowerShell Push-Location and Pop-Location too",
+      decision(autonomous, f"Push-Location {outs}; Pop-Location; git push origin main", tool="PowerShell") == "deny")
+parent = os.path.dirname(autonomous)
+check("FIX1_T5 every -C joins the one before it, as git does",
+      decision(outside, f"git -C {parent} -C {auto_name} push origin main") == "deny")
+check("FIX1_T5 a rooted -C alone decides: a work-branch push there passes",
+      decision(autonomous, f'git -C "{supervised}" push origin feat/x') == "pass")
+# 2. a hub.json that raises leaves the rest of the guard on
+nest = tempfile.mkdtemp(prefix="t5nest_")
+os.makedirs(os.path.join(nest, ".superpowers"))
+os.makedirs(os.path.join(nest, "p"))
+inner = git_repo(os.path.join(nest, "p"), autonomous=True)
+with open(os.path.join(nest, ".superpowers", "hub.json"), "w", encoding="utf-8") as handle:
+    handle.write("[" * 200000)
+for command in ("git push origin main", "git commit --no-verify -m x"):
+    check(f"FIX2_T5 a hub.json nested too deep above a project: still denied {command!r}",
+          decision(inner, command, session="p1") == "deny", str(run(inner, command, session="p1")))
+copy = tempfile.mkdtemp(prefix="t5copy_")
+os.makedirs(os.path.join(copy, "hooks"))
+shutil.copy(SCRIPT, os.path.join(copy, "hooks"))
+shutil.copytree(os.path.join(HOOKS, "..", "skills", "manager"), os.path.join(copy, "skills", "manager"),
+                ignore=shutil.ignore_patterns("tests", "__pycache__"))
+os.makedirs(os.path.join(copy, "skills", "hub"))
+
+
+def copied(command):
+    payload = {"tool_name": "Bash", "cwd": hub_root, "session_id": "h2", "tool_input": {"command": command}}
+    done = subprocess.run([sys.executable, os.path.join(copy, "hooks", "bash-guard.py")], input=json.dumps(payload),
+                          capture_output=True, text=True, encoding="utf-8", cwd=tempfile.gettempdir())
+    return json.loads(done.stdout)["hookSpecificOutput"]["permissionDecision"] if done.stdout.strip() else "pass"
+
+
+for label, text in (("missing", None), ("broken", "def (:\n"), ("exiting", "raise SystemExit(0)\n")):
+    if text is not None:
+        with open(os.path.join(copy, "skills", "hub", "hub.py"), "w", encoding="utf-8") as handle:
+            handle.write(text)
+    check(f"FIX2_T5 a {label} hub.py: the rest of the guard still runs", copied("git commit -n -m x") == "deny")
+# 3. a shell of the other kind is read whatever the tool
+for command in ("cmd /c git commit -m x", "powershell -Command 'git commit -m x'", "pwsh -c 'git merge b'",
+                "cmd //c 'git commit -m x'"):
+    check(f"FIX3_T5 Bash: a hub session reads into {command!r}", hub_denied(command), str(run(hub_root, command, session="h2")))
+for command in ("bash -c 'git commit -m x'", 'sh -c "git push"', "Start-Process git 'commit -m x'",
+                "Start-Process -FilePath git -ArgumentList 'commit -m x'"):
+    check(f"FIX3_T5 PowerShell: a hub session reads into {command!r}", hub_denied(command, tool="PowerShell"),
+          str(run(hub_root, command, tool="PowerShell", session="h2")))
+for command in ("cmd /c git commit -n -m x", "powershell -Command 'git commit --no-verify -m x'"):
+    check(f"FIX3_T5 Bash: skipping the hook in the other shell is denied {command!r}", skips(command))
+for command in ("bash -c 'git commit -n -m x'", "Start-Process git 'commit -n -m x'"):
+    check(f"FIX3_T5 PowerShell: skipping the hook in the other shell is denied {command!r}", ps_skips(command))
+# 4. a hub session runs only read-only git
+for command in ("git pull . feat/x", "git revert HEAD", "git am x.patch", "git fetch . feat/x:main", "git fetch",
+                "git commit-tree x", "git update-ref refs/heads/main abc", "git reset --hard feat/x",
+                "git branch -f main feat/x", "git branch new", "git tag v1", "git tag -d v1", "git stash",
+                "git checkout -B main feat/x", "git worktree add ../w", "git clone x y", "git remote add o u",
+                "git config user.name x", "git symbolic-ref HEAD refs/heads/x", "git switch main", "git restore x",
+                "git --attr-source HEAD commit -m x"):
+    check(f"FIX4_T5 a hub session cannot run git that writes: {command!r}", hub_denied(command),
+          str(run(hub_root, command, session="h2")))
+for command in ("git status", "git log", "git diff", "git show HEAD", "git rev-parse HEAD", "git remote", "git remote -v",
+                "git branch", "git branch -a", "git branch --list 'f*'", "git branch --show-current",
+                "git config --get user.name", "git config --list", "git ls-files", "git describe", "git shortlog -s",
+                "git blame f", "git grep x", "git cat-file -p HEAD", "git for-each-ref", "git merge-base a b",
+                "git name-rev HEAD", "git symbolic-ref HEAD", "git worktree list", "git stash list", "git tag",
+                "git tag -l", "git --version"):
+    check(f"FIX4_T5 a hub session reads with git: {command!r}", decision(hub_root, command, session="h2") == "pass",
+          str(run(hub_root, command, session="h2")))
+# 5. options that hide the subcommand
+for command in ("git --attr-source HEAD commit -n -m x", "git -c alias.z=commit z -m x",
+                "git --config-env=alias.z=E z -m x", "git -c Alias.z='commit -n' z"):
+    check(f"FIX5_T5 a hidden subcommand or an alias is denied in any session: {command!r}", skips(command),
+          str(run(bare, command)))
+# 6. a script counts only when it runs
+SKILLS = "C:/p/plugins/foreman/skills"
+for command in (f"cat {SKILLS}/manager/ledger.py", "ls skills/manager/ledger.py", f"grep -n status {SKILLS}/manager/gate.py",
+                f"cat {SKILLS}/hub/hub.py", "cat hub.py claim", "grep -n hub.py claim.txt"):
+    check(f"FIX6_T5 a hub session reads a script's file: {command!r}", decision(hub_root, command, session="h2") == "pass",
+          str(run(hub_root, command, session="h2")))
+check("FIX6_T5 any session: cat hub.py claim passes", decision(bare, "cat hub.py claim", session="p1") == "pass")
+for command in (f"cd {SKILLS}/manager && python -m ledger note --text x", f"python -X utf8 {SKILLS}/manager/ledger.py note",
+                f"python3 {SKILLS}/manager/gate.py", f"py -3 {SKILLS}/manager/ledger.py waive x",
+                f"{SKILLS}/manager/ledger.py note --text x"):
+    check(f"FIX6_T5 a hub session still cannot run it: {command!r}", hub_denied(command),
+          str(run(hub_root, command, session="h2")))
+check("FIX6_T5 PowerShell: python -m ledger", hub_denied("python -m ledger note", tool="PowerShell"))
+check("FIX6_T5 hub.py claim behind an option is denied",
+      decision(hub_root, f"python {SKILLS}/hub/hub.py --raiz . claim --sessao h1", session="p1") == "deny")
+# 7. a junction or link to a folder under the root is the hub
+link = os.path.join(tempfile.mkdtemp(prefix="t5link_"), "j")
+if os.name == "nt":
+    subprocess.run(["cmd", "/c", "mklink", "/J", link, os.path.join(hub_root, "proj")], capture_output=True)
+else:
+    os.symlink(os.path.join(hub_root, "proj"), link)
+check("FIX7_T5 a hub session through a junction to a folder under the root", os.path.isdir(link)
+      and hub_denied("git commit -m x", cwd=link), str(run(link, "git commit -m x", session="h2")))
+# 8. --git-dir, --work-tree and GIT_DIR name the repository like -C
+for command in (f"git --git-dir={autonomous}/.git --work-tree={autonomous} push origin main",
+                f"git --git-dir {autonomous}/.git push origin main", f"GIT_DIR={autonomous}/.git git merge feat/x",
+                f"export GIT_DIR={autonomous}/.git; git push origin main"):
+    check(f"FIX8_T5 the repository a git dir names decides: denied {command!r}", decision(outside, command) == "deny",
+          str(run(outside, command)))
+check("FIX8_T5 PowerShell $env:GIT_DIR too",
+      decision(outside, f"$env:GIT_DIR='{autonomous}/.git'; git push origin main", tool="PowerShell") == "deny")
+# 9. only the dono writes a registry that exists
+proj_dir_slash = proj_dir.replace(os.sep, "/")
+root_slash = hub_root.replace(os.sep, "/")
+for command in (f"{PY}/hub/hub.py set --raiz {root_slash} --bg on",
+                f"{PY}/hub/hub.py delegate --raiz={root_slash} --projeto proj"):
+    check(f"FIX9_T5 a project session cannot write the hub's registry: {command!r}",
+          decision(proj_dir, command, session="p1") == "deny", str(run(proj_dir, command, session="p1")))
+    check(f"FIX9_T5 the dono can, from anywhere: {command!r}", decision(proj_dir, command, session="h2") == "pass",
+          str(run(proj_dir, command, session="h2")))
+check("FIX9_T5 a session in the root that is not in sessoes cannot write it",
+      decision(hub_root, f"{PY}/hub/hub.py add --nome a --pasta C:/a", session="x9") == "deny")
+fresh = tempfile.mkdtemp(prefix="t5fresh_").replace(os.sep, "/")
+check("FIX9_T5 init where there is no hub.json yet passes for anyone",
+      decision(proj_dir, f"{PY}/hub/hub.py init --raiz {fresh}", session="p1") == "pass")
+check("FIX9_T5 reading the registry passes for anyone",
+      decision(proj_dir, f"{PY}/hub/hub.py status --raiz {root_slash}", session="p1") == "pass")
 
 config = json.load(open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8"))
 pre = config["hooks"]["PreToolUse"]
