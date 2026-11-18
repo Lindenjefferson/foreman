@@ -9,10 +9,10 @@ def check(name, ok, detail=""):
     print("PASS" if ok else "FAIL", name, "" if ok else f"| {str(detail)[-300:]}")
 
 
-def run(raiz, *args, stdin=""):
-    return subprocess.run([sys.executable, HUB, *args, "--raiz", raiz, "--agora", "2030-01-01T00:00:00Z",
-                           "--sistema", "posix"], input=stdin, capture_output=True, text=True, encoding="utf-8",
-                          errors="replace", cwd=tempfile.gettempdir())
+def run(raiz, *args, stdin="", agora="2030-01-01T00:00:00Z", sistema="posix", env=None):
+    return subprocess.run([sys.executable, HUB, *args, "--raiz", raiz, "--agora", agora, "--sistema", sistema],
+                          input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          cwd=tempfile.gettempdir(), env=env)
 
 
 def status(raiz):
@@ -410,7 +410,8 @@ gitproj(g2, "b")
 with open(os.path.join(pa2, ".git", "config"), "ab") as fh:
     fh.write(b"[foreman]" + bytes([10, 9]) + b"home = /x" + bytes([0xFF, 10]))
 r, d = status(g2)
-check("FIX_T2_2 a non-UTF-8 byte in one project does not kill the others", r.returncode == 0 and names(d) == ["a", "b"],
+check("FIX_T2_2 a non-UTF-8 byte in one project does not kill the others", r.returncode == 0 and names(d) == ["a", "b"]
+      and not any("check failed" in a for p_ in d["projetos"] for a in p_["avisos"]),
       out(r))
 
 g3 = root()
@@ -451,6 +452,230 @@ check("FIX_T2_5 a project without its own .git never uses the parent repo's ledg
 g6 = root()
 reg_bytes(g6, b'{"projetos":{"x":{"bg":"yes"}}}')
 check("FIX_T2_6 an entry-level bg of the wrong type is bad-registry", run(g6, "status").returncode == 2)
+
+# T3
+import importlib.util
+import contextlib, io, time
+
+spec = importlib.util.spec_from_file_location("hubmod", HUB)
+hub = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hub)
+
+
+def estado(d, nome):
+    return proj(d, nome)
+
+
+T = "2030-01-01T00:00:00Z"
+h1 = root()
+ph1 = gitproj(h1, "a")
+text = "q'\"$HOME `x` " + chr(10) + "y" * 300
+r = run(h1, "delegate", "--projeto", "a", stdin=text)
+pa_ = proj(status(h1)[1], "a")
+check("AC_T3_1 delegate stores the first 200 chars, the time and enviado", r.returncode == 0
+      and pa_["pedido"] == {"texto": text[:200], "em": T} and pa_["estado"] == "enviado", out(r) + str(pa_))
+r = run(h1, "delegate", "--projeto", "A", "--nao-entregue", stdin="again")
+check("AC_T3_1 --nao-entregue gives nao-entregue (name matched ignoring case)", r.returncode == 0
+      and proj(status(h1)[1], "a")["estado"] == "nao-entregue", out(r))
+check("AC_T3_1 an empty request is refused", run(h1, "delegate", "--projeto", "a", stdin="  ").returncode == 1)
+
+r = run(h1, "delegate", "--projeto", "zz", stdin="x")
+check("AC_T3_2 an unknown name exits 1 with unknown-project and the names", r.returncode == 1
+      and out(r).startswith("unknown-project") and "a" in out(r), out(r))
+gitproj(h1, "late")
+check("AC_T3_2 a project created after init is found", run(h1, "delegate", "--projeto", "late", stdin="x").returncode == 0)
+
+h2 = root()
+pb2 = gitproj(h2, "a")
+write(os.path.join(pb2, ".superpowers", "atualizar.json"), "{}")
+gone2 = os.path.realpath(tempfile.mkdtemp(prefix="hub gone "))
+run(h2, "add", "--nome", "g", "--pasta", gone2)
+os.rmdir(gone2)
+run(h2, "set", "--projeto", "g", "--abrir", "true")
+reg2 = open(os.path.join(h2, ".superpowers", "hub.json"), "rb").read()
+ok = True
+for cmd_, nome, code in (("delegate", "a", "half-update"), ("abrir", "a", "half-update"),
+                         ("delegate", "g", "missing-folder"), ("abrir", "g", "missing-folder")):
+    r = run(h2, cmd_, "--projeto", nome, stdin="x")
+    good = r.returncode == 1 and out(r).startswith(code)
+    ok = ok and good
+    if not good:
+        print("   ", cmd_, nome, out(r))
+check("AC_T3_3 half-update and missing-folder refuse delegate and abrir", ok)
+check("AC_T3_3 and the registry does not change", open(os.path.join(h2, ".superpowers", "hub.json"), "rb").read() == reg2)
+
+# AC-T3-4
+h4 = root()
+wdir = os.path.realpath(tempfile.mkdtemp(prefix="hub writer "))
+writer = os.path.join(wdir, "w.py")
+write(writer, "import json, os, sys" + chr(10) + "json.dump({'cwd': os.getcwd(), 'argv': sys.argv[2:], 'env': {k: v for "
+      "k, v in os.environ.items() if k.startswith('CLAUDE') or k in ('NO_COLOR', 'GIT_TERMINAL_PROMPT')}}, "
+      "open(sys.argv[1], 'w'))" + chr(10))
+outfile = os.path.join(wdir, "o.json")
+spaced = os.path.join(os.path.realpath(tempfile.mkdtemp(prefix="hub x ")), "my proj")
+os.makedirs(spaced)
+run(h4, "add", "--nome", "a", "--pasta", spaced, "--conta", "acc 1")
+run(h4, "set", "--abrir", "'" + sys.executable + "' '" + writer + "' '" + outfile + "' {pasta} {nome} {conta}")
+envx = {**os.environ, "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_X": "1", "CLAUDE_CONFIG_DIR": "/c", "NO_COLOR": "1",
+        "GIT_TERMINAL_PROMPT": "0"}
+r = run(h4, "abrir", "--projeto", "a", env=envx)
+got = json.load(open(outfile, encoding="utf-8")) if os.path.exists(outfile) else {}
+check("AC_T3_4 the opener runs in the project folder with the whole folder as one argument and the conta",
+      r.returncode == 0 and os.path.realpath(got.get("cwd", "")).casefold() == os.path.realpath(spaced).casefold()
+      and got.get("argv") == [spaced, "a", "acc 1"], out(r) + str(got))
+check("AC_T3_4 only CLAUDE_CONFIG_DIR survives the cleanup", list(got.get("env", {})) == ["CLAUDE_CONFIG_DIR"], got)  # sh may rewrite /c on Windows
+os.remove(outfile)
+run(h4, "set", "--projeto", "a", "--conta", "")
+r = run(h4, "abrir", "--projeto", "a", env=envx)
+got = json.load(open(outfile, encoding="utf-8")) if os.path.exists(outfile) else {}
+check("AC_T3_4 no conta substitutes an empty string", got.get("argv") == [spaced, "a", ""], got)
+run(h4, "set", "--projeto", "a", "--conta", "x")
+run(h4, "set", "--abrir", "echo $(touch " + os.path.join(wdir, "pwned") + ") {pasta}")
+run(h4, "add", "--nome", "q", "--pasta", os.path.join(wdir), "--conta", "$(touch " + os.path.join(wdir, "pwned") + ")")
+run(h4, "abrir", "--projeto", "q")
+check("AC_T3_4 a conta with shell syntax is passed as data", not os.path.exists(os.path.join(wdir, "pwned")))
+check("clean_env keeps CLAUDE_CONFIG_DIR and persistent variables, drops the rest",
+      hub.clean_env({"CLAUDE_X": "1", "claude_y": "1", "CLAUDE_CONFIG_DIR": "/c", "NO_COLOR": "1", "PATH": "p",
+                     "CLAUDE_KEEP": "1", "GIT_TERMINAL_PROMPT": "0"}, {"CLAUDE_KEEP"})
+      == {"CLAUDE_CONFIG_DIR": "/c", "PATH": "p", "CLAUDE_KEEP": "1"})
+
+# AC-T3-5
+h5 = root()
+pf5 = gitproj(h5, "a")
+fake = os.path.realpath(tempfile.mkdtemp(prefix="hub fake "))
+open(os.path.join(fake, "wt.exe"), "w").close()
+empty = os.path.realpath(tempfile.mkdtemp(prefix="hub empty "))
+r = run(h5, "abrir", "--projeto", "a", "--mostrar", sistema="nt", env={**os.environ, "PATH": fake})
+check("AC_T3_5 nt with wt.exe: the Windows Terminal command with -n <nome>", r.returncode == 0 and
+      ("wt.exe -w new -d " + pf5 + " claude --permission-mode auto -n a") in r.stdout and "warning" not in r.stdout, out(r))
+r = run(h5, "abrir", "--projeto", "a", "--mostrar", sistema="nt", env={**os.environ, "PATH": empty})
+check("AC_T3_5 nt without wt.exe: Start-Process through powershell, pasta quoted", r.returncode == 0 and
+      "powershell -NoProfile -Command Start-Process -FilePath claude -ArgumentList '--permission-mode','auto','-n','a' "
+      "-WorkingDirectory '" + pf5 + "'" in r.stdout, out(r))
+q5 = root()
+pq = os.path.join(q5, "it's here")
+os.makedirs(os.path.join(pq, ".claude"))
+write(os.path.join(pq, ".claude", "settings.local.json"), json.dumps({"enabledPlugins": {"foreman@foreman": True}}))
+run(q5, "add", "--nome", "qq", "--pasta", pq)
+r = run(q5, "abrir", "--projeto", "qq", "--mostrar", sistema="nt", env={**os.environ, "PATH": empty})
+check("AC_T3_5 a quote and a space in the pasta are doubled and kept inside one literal",
+      "-WorkingDirectory '" + pq.replace("'", "''") + "'" in r.stdout and "it''s here" in r.stdout, out(r))
+h5b = root()
+gitproj(h5b, "a")
+run(h5b, "set", "--abrir", "global {pasta}")
+run(h5b, "set", "--projeto", "a", "--abrir", "mine {nome}")
+r = run(h5b, "abrir", "--projeto", "a", "--mostrar")
+check("AC_T3_5 the project's abrir wins over the global one", "mine a" in r.stdout and "global" not in r.stdout, out(r))
+run(h5b, "set", "--projeto", "a", "--abrir", "")
+r = run(h5b, "abrir", "--projeto", "a", "--mostrar")
+check("AC_T3_5 without the project's, the global one runs", r.stdout.startswith("global ") or "global " in r.stdout, out(r))
+
+# AC-T3-8
+h8 = root()
+gitproj(h8, "a")
+r = run(h8, "abrir", "--projeto", "a", "--mostrar", sistema="posix")
+check("AC_T3_8 posix without abrir: the --bg command and a warning naming autonomous mode and set --abrir",
+      r.returncode == 0 and "claude --bg --permission-mode auto -n a" in r.stdout and "autonomous" in r.stdout
+      and "set --abrir" in r.stdout, out(r))
+check("AC_T3_8 status reports bg true on posix and false on nt",
+      proj(status(h8)[1], "a")["bg"] is True
+      and proj(json.loads(run(h8, "status", "--json", sistema="nt").stdout), "a")["bg"] is False)
+run(h8, "set", "--bg", "on")
+r = run(h8, "abrir", "--projeto", "a", "--mostrar", sistema="nt")
+check("AC_T3_8 set --bg on: the --bg command on nt, no warning", "claude --bg --permission-mode auto -n a" in r.stdout
+      and "warning" not in r.stdout, out(r))
+run(h8, "set", "--bg", "off")
+run(h8, "set", "--projeto", "a", "--bg", "on")
+r = run(h8, "abrir", "--projeto", "a", "--mostrar", sistema="nt")
+check("AC_T3_8 bg only on the project", "claude --bg" in r.stdout and "warning" not in r.stdout, out(r))
+run(h8, "set", "--projeto", "a", "--abrir", "myopen {nome}")
+r = run(h8, "abrir", "--projeto", "a", "--mostrar", sistema="nt")
+check("AC_T3_8 a registered abrir wins over bg", "myopen" in r.stdout and "--bg" not in r.stdout, out(r))
+
+# AC-T3-6
+h6 = root()
+gitproj(h6, "a")
+run(h6, "set", "--abrir", "echo conta inexistente; exit 3")
+r = run(h6, "abrir", "--projeto", "a")
+check("AC_T3_6 a failing opener gives open-failed with the command and its output", r.returncode == 1
+      and out(r).startswith("open-failed") and "conta inexistente" in out(r) and "exit 3" in out(r), out(r))
+run(h6, "set", "--abrir", "this-command-does-not-exist-xyz")
+r = run(h6, "abrir", "--projeto", "a")
+check("AC_T3_6 a command that does not exist is open-failed too", r.returncode == 1 and out(r).startswith("open-failed"),
+      out(r))
+run(h6, "set", "--abrir", "'" + sys.executable + "' -c 'import time; time.sleep(5)'")
+hub.OPEN_TIMEOUT = 1
+err = io.StringIO()
+with contextlib.redirect_stderr(err):
+    rc = hub.main(["abrir", "--projeto", "a", "--raiz", h6, "--sistema", "posix"])
+check("AC_T3_6 a timeout is open-failed and says the command did not return the terminal", rc == 1
+      and err.getvalue().startswith("open-failed") and "did not return" in err.getvalue(), err.getvalue())
+
+# AC-T3-7
+h7 = root()
+p7 = gitproj(h7, "a")
+run(h7, "delegate", "--projeto", "a", stdin="do it")
+led = os.path.join(p7, ".superpowers", "ledger.jsonl")
+write(led, "")
+t0 = 1893456000  # 2030-01-01T00:00:00Z
+os.utime(led, (t0 - 3600, t0 - 3600))
+d = json.loads(run(h7, "status", "--json", agora="2030-01-01T00:10:00Z").stdout)
+check("AC_T3_7 enviado with a ledger untouched since the request is sem-resposta, 10 minutes",
+      proj(d, "a")["estado"] == "sem-resposta" and proj(d, "a")["minutos"] == 10, proj(d, "a"))
+os.utime(led, (t0 + 60, t0 + 60))
+d = json.loads(run(h7, "status", "--json", agora="2030-01-01T00:10:00Z").stdout)
+check("AC_T3_7 a ledger modified after the request keeps enviado", proj(d, "a")["estado"] == "enviado", proj(d, "a"))
+run(h7, "set", "--projeto", "a", "--estado", "respondido")
+check("AC_T3_7 set --estado respondido", proj(status(h7)[1], "a")["estado"] == "respondido")
+check("AC_T3_7 set --estado with another value is refused", run(h7, "set", "--projeto", "a", "--estado", "x").returncode
+      == 1)
+os.utime(led, (t0 - 3600, t0 - 3600))
+run(h7, "delegate", "--projeto", "a", stdin="again")
+h7b = root()
+gitproj(h7b, "w")
+p7b = gitproj(h7b, "z")
+run(h7b, "delegate", "--projeto", "w", stdin="x")
+lw = os.path.join(h7b, "w", ".superpowers", "ledger.jsonl")
+write(lw, "")
+os.utime(lw, (t0 - 3600, t0 - 3600))
+dd = json.loads(run(h7b, "status", "--json", agora="2030-01-01T00:10:00Z").stdout)
+check("AC_T3_7 a project with sem-resposta comes before the rest", names(dd) == ["w", "z"], names(dd))
+check("AC_T3_7 the text says sem-resposta and the minutes", "sem-resposta" in run(h7b, "status", agora="2030-01-01T00:10:00Z").stdout)
+
+# T2 leftovers (a)-(d)
+real_entrega = hub.entrega_de
+
+
+def boom(pasta):
+    if os.path.basename(pasta) == "b":
+        raise RuntimeError("boom")
+    return real_entrega(pasta)
+
+
+k = root()
+gitproj(k, "a")
+pk = gitproj(k, "b")
+write(os.path.join(pk, ".superpowers", "atualizar.json"), "{}")
+hub.entrega_de = boom
+d = hub.listing(k, hub.load(k), T, "posix")
+hub.entrega_de = real_entrega
+check("LEFT2_a an exception gives only check failed: <Type>, entrega None, half-update kept",
+      proj(d, "b")["avisos"] == ["half-update", "check failed: RuntimeError"] and proj(d, "b")["entrega"] is None
+      and proj(d, "a")["avisos"] == [], d)
+check("LEFT2_b clean() replaces control and bidi characters",
+      hub.clean("a" + chr(27) + "[31m" + chr(0) + "b" + chr(0x202E) + " c") == "a [31m b c",
+      repr(hub.clean("a" + chr(27) + "[31m" + chr(0) + "b" + chr(0x202E) + " c")))
+longp = os.path.join(root(), "x" * 150, "y" * 150)
+os.makedirs(longp)
+kk = root()
+reg_bytes(kk, json.dumps({"projetos": {"lp": {"pasta": longp}}}).encode())
+r = run(kk, "status")
+check("LEFT2_c the text status does not truncate pasta", longp in r.stdout, r.stdout)
+kb = root()
+reg_bytes(kb, b'{"bg": null, "projetos": {}}')
+gitproj(kb, "a")
+check("LEFT2_d bg null is reported as false", proj(json.loads(run(kb, "status", "--json", sistema="nt").stdout), "a")["bg"]
+      is False)
 
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")

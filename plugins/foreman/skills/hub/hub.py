@@ -10,6 +10,9 @@ Commands
   set     [--projeto <n>] [--conta <c>] [--abrir <cmd>] [--bg on|off]
                                                               without --projeto: the global abrir and bg
   remove  --projeto <n>                                       drops a registry entry
+  set     --projeto <n> --estado respondido                   the owner saw the project answer
+  delegate --projeto <n> [--nao-entregue]                     stores the request (text on stdin, first 200 chars)
+  abrir   --projeto <n> [--mostrar]                           opens the project's session; --mostrar only prints
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
 --sistema nt|posix (default: os.name; the tests pass the last two). Every command except init and a global set
@@ -40,15 +43,27 @@ Rules
   keeps it "varredura" and stores only what it sets. A registry that is not a JSON object: exit 2, untouched.
 - Never writes inside a project folder; the only file written is the registry.
 
+delegate refuses an unknown project, a missing folder and a half update, then stores {"texto", "em"} and the estado
+"enviado" ("nao-entregue" with the flag); the text is only stored, never run. status derives "sem-resposta" (and
+"minutos") from "enviado" when the project's ledger.jsonl was not modified after "em", from one minute on.
+abrir runs, in the project folder with the CLAUDE* variables (except CLAUDE_CONFIG_DIR), NO_COLOR and
+GIT_TERMINAL_PROMPT removed (unless defined at User or Machine level on Windows), within 60 s: the project's
+"abrir", else the global one, by `sh -c` with {pasta}, {nome} and {conta} shlex-quoted ({conta} empty without one);
+else, as an argument list without a shell, `wt.exe -w new -d <pasta> claude --permission-mode auto -n <nome>` on nt
+(PowerShell Start-Process when wt.exe is not in PATH) or `claude --bg --permission-mode auto -n <nome>` when bg is on
+(project, else global) and, on posix with no abrir, as a fallback with a warning. A non-zero exit, a command that is
+not found or the timeout is open-failed, with the command and its output. "bg" in status is that effective value.
+
 Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (any command but status, in a
 folder with .superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
-argument or a --raiz that is not a folder), bad-registry 2 (nothing was overwritten).
+argument or a --raiz that is not a folder), open-failed 1, half-update 1, bad-registry 2 (nothing was overwritten).
 """
-import argparse, json, os, re, subprocess, sys, tempfile
+import argparse, datetime, json, os, re, shlex, shutil, subprocess, sys, tempfile
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 LEDGER = os.path.join(PLUGIN, "skills", "manager", "ledger.py")
+OPEN_TIMEOUT = 60  # seconds for an opener to return the terminal
 TIMEOUT = 30  # seconds per ledger.py call, so one slow project cannot hang the status
 INSTALL = "claude plugin install foreman@foreman --scope local"
 
@@ -74,20 +89,25 @@ def valid(d):
     for e in d.get("projetos", {}).values():
         if not isinstance(e, dict) or not (e.get("bg") is None or isinstance(e["bg"], bool)):
             return False
-        if not all(isinstance(e[k], str) for k in ("pasta", "conta", "abrir") if e.get(k) is not None):
+        if not all(isinstance(e[k], str) for k in ("pasta", "conta", "abrir", "estado") if e.get(k) is not None):
+            return False
+        ped = e.get("pedido")
+        if not (ped is None or isinstance(ped, dict) and isinstance(ped.get("texto"), str)
+                and isinstance(ped.get("em"), str)):
             return False
     return True
 
 
-def clean(x):
-    """Text that comes from a project, safe for the hub's context: one line, at most 200 characters."""
-    return " ".join(str(x).split())[:200]
+def clean(x, cap=200):
+    """Text that comes from a project, safe for the hub's context: one printable line, at most cap characters."""
+    text = " ".join("".join(c if c.isprintable() else " " for c in str(x)).split())
+    return text[:cap] if cap else text
 
 
 def load(raiz):
     p = reg_path(raiz)
     if not os.path.exists(p):
-        return {"abrir": None, "bg": False, "projetos": {}}
+        return {"abrir": None, "bg": None, "projetos": {}}
     try:
         with open(p, encoding="utf-8") as f:
             d = json.load(f)
@@ -95,7 +115,7 @@ def load(raiz):
             raise ValueError("wrong shape")
     except (ValueError, OSError):
         raise Refuse("bad-registry", f"{p} is not a valid hub registry; nothing was overwritten", 2)
-    d.setdefault("abrir", None), d.setdefault("bg", False), d.setdefault("projetos", {})
+    d.setdefault("abrir", None), d.setdefault("bg", None), d.setdefault("projetos", {})
     return d
 
 
@@ -200,11 +220,8 @@ def versao(path):
         return None
 
 
-def avisos_de(pasta):
-    """Warnings of a project folder that exists: half-update, a foreman.home of another version."""
-    av = []
-    if os.path.exists(os.path.join(pasta, ".superpowers", "atualizar.json")):
-        av.append("half-update")
+def versao_aviso(pasta):
+    """["version X (hub Y)"] when the project's foreman.home holds another plugin version, else []."""
     home = ""
     if os.path.exists(os.path.join(pasta, ".git")):  # a project inside another repo has no foreman.home of its own
         try:
@@ -216,34 +233,80 @@ def avisos_de(pasta):
     theirs = versao(os.path.join(home, ".claude-plugin", "plugin.json")) if home else None
     mine = versao(os.path.join(PLUGIN, ".claude-plugin", "plugin.json"))
     if theirs and mine and theirs != mine:
-        av.append(clean(f"version {theirs} (hub {mine})"))
-    return av
+        return [clean(f"version {theirs} (hub {mine})")]
+    return []
 
 
-def listing(raiz, dados):
+def efetivo_bg(e, dados, sistema):
+    """Explicit bg of the project, else the global one, else True on posix, where no window opener exists."""
+    for v in (e.get("bg"), dados.get("bg")):
+        if v is not None:
+            return bool(v)
+    return sistema == "posix"
+
+
+def utc(t):
+    try:
+        return datetime.datetime.fromisoformat(t.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def estado_de(e, pasta, agora):
+    """(estado, minutos): enviado becomes sem-resposta when the ledger was not touched after the request."""
+    estado, ped = e.get("estado"), e.get("pedido")
+    if estado != "enviado" or not ped:
+        return estado, None
+    em, now = utc(ped["em"]), utc(agora)
+    if em is None or now is None:
+        return estado, None
+    try:
+        mod = datetime.datetime.fromtimestamp(os.path.getmtime(os.path.join(pasta, ".superpowers", "ledger.jsonl")),
+                                              datetime.timezone.utc)
+    except OSError:
+        mod = None
+    if mod is not None and mod > em:
+        return estado, None
+    minutos = int((now - em).total_seconds() // 60)
+    return ("sem-resposta", minutos) if minutos >= 1 else (estado, None)  # a request just sent is not yet unanswered
+
+
+def listing(raiz, dados, agora, sistema):
     todos, avisos = known(raiz, dados)
     projetos = []
     for n in sorted(todos, key=str.casefold):
         pasta, origem = todos[n]
         e = dados["projetos"].get(find(n, dados["projetos"]) or n, {})
-        av, entrega = ["missing-folder"], None
+        av, entrega, estado, minutos = ["missing-folder"], None, e.get("estado"), None
         if os.path.isdir(pasta):
+            av = ["half-update"] if os.path.exists(os.path.join(pasta, ".superpowers", "atualizar.json")) else []
             try:
-                av, entrega = avisos_de(pasta), entrega_de(pasta)
-            except Exception:  # whatever one project does, the others are still listed
-                av, entrega = ["check failed"], False
+                av.extend(versao_aviso(pasta))
+            except Exception as x:  # whatever one project does, the others are still listed
+                av.append(f"check failed: {type(x).__name__}")
+            try:
+                entrega = entrega_de(pasta)
+            except Exception as x:
+                av.append(f"check failed: {type(x).__name__}")
+                entrega = None
             if entrega is False:
                 av, entrega = av + ["ledger unreadable"], None
-        projetos.append({"nome": clean(n), "pasta": pasta, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
-                         "origem": origem, "kickoff": os.path.isfile(os.path.join(pasta, "CLAUDE.md")),
-                         "avisos": av, "entrega": entrega, "pedido": e.get("pedido"), "estado": e.get("estado"),
-                         "minutos": None})
+            estado, minutos = estado_de(e, pasta, agora)
+        projetos.append({"nome": clean(n), "pasta": pasta, "conta": e.get("conta"),
+                         "bg": efetivo_bg(e, dados, sistema), "origem": origem,
+                         "kickoff": os.path.isfile(os.path.join(pasta, "CLAUDE.md")), "avisos": av,
+                         "entrega": entrega, "pedido": e.get("pedido"), "estado": estado, "minutos": minutos})
     for n, e in sorted(dados["projetos"].items(), key=lambda kv: kv[0].casefold()):
         if not find(n, todos):  # a stub of a scanned project whose folder is gone
-            projetos.append({"nome": n, "pasta": None, "conta": e.get("conta"), "bg": e.get("bg", dados["bg"]),
-                             "origem": "varredura", "kickoff": False, "avisos": ["missing-folder"], "entrega": None,
-                             "pedido": e.get("pedido"), "estado": e.get("estado"), "minutos": None})
-    projetos.sort(key=lambda p: not (p["entrega"] or {}).get("espera"))  # stable: what waits for the owner first
+            projetos.append({"nome": clean(n), "pasta": None, "conta": e.get("conta"),
+                             "bg": efetivo_bg(e, dados, sistema), "origem": "varredura", "kickoff": False,
+                             "avisos": ["missing-folder"], "entrega": None, "pedido": e.get("pedido"),
+                             "estado": e.get("estado"), "minutos": None})
+
+    def rank(p):  # the owner's turn first, then what got no answer, then the rest (stable)
+        return 0 if (p["entrega"] or {}).get("espera") else 1 if p["estado"] == "sem-resposta" else 2
+
+    projetos.sort(key=rank)
     return {"raiz": raiz, "dono": dados.get("dono"), "avisos": [clean(w) for w in avisos], "projetos": projetos}
 
 
@@ -262,7 +325,7 @@ def cmd_init(a, raiz, dados):
 
 
 def cmd_status(a, raiz, dados):
-    lst = listing(raiz, dados)
+    lst = listing(raiz, dados, a.agora, a.sistema)
     if a.json:
         print(json.dumps(lst, ensure_ascii=False, indent=2))
         return
@@ -273,13 +336,18 @@ def cmd_status(a, raiz, dados):
     for p in lst["projetos"]:
         en = p["entrega"]
         extra = [f"conta {clean(p['conta'])}"] if p["conta"] else []
+        if p["pedido"]:
+            extra += [f"request {p['estado']}: {clean(p['pedido']['texto'])}"]
+        if p["estado"] == "sem-resposta":
+            extra += [f"sem resposta ha {p['minutos']} min: the message may be held in the project's window; approve "
+                      "there or send it again"]
         if en:
             extra += [f"delivery {en['slug']}"] + [f"waits: {t}" for t in en["espera"]]
             extra += (["autonomous"] if en["autonomo"] else []) + (["paused"] if en["pausada"] else [])
             extra += [f"{en['validar']} VALIDAR open"] if en["validar"] else []
             extra += [f"{en['faltam']['tarefas']} tasks, {en['faltam']['ciclos']} cycles left"]
-        print(f"{p['nome']} [{p['origem']}] {clean(p['pasta']) if p['pasta'] else '(gone)'}" + "".join(f" | {x}" for x in extra + p["avisos"]
-              + ([] if p["kickoff"] else ["no kickoff"])))
+        print(f"{p['nome']} [{p['origem']}] {clean(p['pasta'], None) if p['pasta'] else '(gone)'}"
+              + "".join(f" | {x}" for x in extra + p["avisos"] + ([] if p["kickoff"] else ["no kickoff"])))
 
 
 def cmd_add(a, raiz, dados):
@@ -302,6 +370,8 @@ def cmd_set(a, raiz, dados):
     if a.projeto is None:
         if a.conta is not None:
             raise Refuse("usage", "--conta needs --projeto")
+        if a.estado:
+            raise Refuse("usage", "--estado needs --projeto")
         if a.abrir is not None:
             dados["abrir"] = a.abrir or None
         if a.bg:
@@ -316,6 +386,8 @@ def cmd_set(a, raiz, dados):
             e["abrir"] = a.abrir or None
         if a.bg:
             e["bg"] = a.bg == "on"
+        if a.estado:
+            e["estado"] = a.estado
     save(raiz, dados)
 
 
@@ -327,6 +399,111 @@ def cmd_remove(a, raiz, dados):
         raise Refuse("usage", f"{a.projeto!r} comes from the scan; there is no registry entry to remove")
     del dados["projetos"][n]
     save(raiz, dados)
+
+
+def pronto(raiz, dados, nome):
+    """(name, folder, entry) of a project that can take a request: known, with its folder and no half update."""
+    todos, _ = known(raiz, dados)
+    n = resolve(nome, todos, dados)
+    pasta = todos[n][0]
+    if not os.path.isdir(pasta):
+        raise Refuse("missing-folder", f"{pasta} does not exist; remove the entry with remove --projeto {n}")
+    if os.path.exists(os.path.join(pasta, ".superpowers", "atualizar.json")):
+        raise Refuse("half-update", "finish the update in the project's own session first")
+    return n, pasta, dados["projetos"].get(find(n, dados["projetos"]) or n, {})
+
+
+def cmd_delegate(a, raiz, dados):
+    n, pasta, e = pronto(raiz, dados, a.projeto)
+    texto = sys.stdin.read()
+    if not texto.strip():
+        raise Refuse("usage", "the request text comes on stdin and is empty")
+    e = dados["projetos"].setdefault(find(n, dados["projetos"]) or n, {})
+    e["pedido"] = {"texto": texto[:200], "em": a.agora or now()}
+    e["estado"] = "nao-entregue" if a.nao_entregue else "enviado"
+    save(raiz, dados)  # the text is only stored, never run
+
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def persistent_env(sistema):
+    """Upper-case names defined at User or Machine level on Windows (kept by clean_env); none elsewhere."""
+    names = set()
+    if sistema == "nt" and os.name == "nt":
+        import winreg
+        for hive, key in ((winreg.HKEY_CURRENT_USER, "Environment"), (winreg.HKEY_LOCAL_MACHINE,
+                          r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment")):
+            try:
+                with winreg.OpenKey(hive, key) as k:
+                    i = 0
+                    while True:
+                        names.add(winreg.EnumValue(k, i)[0].upper())
+                        i += 1
+            except OSError:
+                pass
+    return names
+
+
+def clean_env(environ, persistent):
+    """Without this a window opened from this session is a CLAUDE_CODE_CHILD_SESSION child, with no transcript or color."""
+    drop = lambda k: (k.upper().startswith("CLAUDE") and k.upper() != "CLAUDE_CONFIG_DIR"
+                      or k.upper() in ("NO_COLOR", "GIT_TERMINAL_PROMPT")) and k.upper() not in persistent
+    return {k: v for k, v in environ.items() if not drop(k)}
+
+
+def comando(a, n, pasta, e, dados):
+    """(argv, text shown, warning): a registered abrir by sh -c with quoted values, else a default as an argument list."""
+    abrir = e.get("abrir") or dados.get("abrir")
+    conta = e.get("conta") or ""
+    if abrir:
+        vals = {"pasta": pasta, "nome": n, "conta": conta}
+        cmd = re.sub(r"\{(pasta|nome|conta)\}", lambda m: shlex.quote(vals[m.group(1)]), abrir)
+        return ["sh", "-c", cmd], cmd, None
+    flags = ["claude", "--permission-mode", "auto", "-n", n]
+    if efetivo_bg(e, dados, a.sistema) or a.sistema != "nt":
+        warn = None
+        if e.get("bg") is not True and dados.get("bg") is not True:
+            warn = ("warning: no abrir is registered on this system, so the session starts with claude --bg in "
+                    "autonomous mode and nobody sees it; register a window opener with set --abrir")
+        return ["claude", "--bg", "--permission-mode", "auto", "-n", n], None, warn
+    if shutil.which("wt.exe"):
+        return ["wt.exe", "-w", "new", "-d", pasta] + flags, None, None
+    q = lambda t: t.replace("'", "''")
+    ps = (f"Start-Process -FilePath claude -ArgumentList '--permission-mode','auto','-n','{q(n)}' "
+          f"-WorkingDirectory '{q(pasta)}'")
+    return ["powershell", "-NoProfile", "-Command", ps], None, None
+
+
+def cmd_abrir(a, raiz, dados):
+    n, pasta, e = pronto(raiz, dados, a.projeto)
+    argv, shown, warn = comando(a, n, pasta, e, dados)
+    shown = shown or " ".join(argv)
+    if warn:
+        print(warn)
+    if a.mostrar:
+        print(shown)
+        return
+    env = clean_env(os.environ, persistent_env(a.sistema))
+    if argv[0] == "sh" and not shutil.which("sh", path=env.get("PATH")):
+        raise Refuse("open-failed", f"{shown}\nsh was not found")
+    with tempfile.TemporaryFile() as sink:  # a file, not a pipe: a window that keeps the handle cannot hold us
+        try:
+            r = subprocess.run(argv, cwd=pasta, env=env, stdin=subprocess.DEVNULL, stdout=sink,
+                               stderr=subprocess.STDOUT, timeout=OPEN_TIMEOUT)
+            code = r.returncode
+        except subprocess.TimeoutExpired:
+            code = "timeout"
+        except OSError as x:
+            raise Refuse("open-failed", f"{shown}\n{x}")
+        sink.seek(0)
+        texto = sink.read().decode("utf-8", "replace")
+    if code == "timeout":
+        raise Refuse("open-failed", f"{shown}\nthe command did not return the terminal within {OPEN_TIMEOUT} s")
+    if code != 0:
+        raise Refuse("open-failed", f"{shown}\nexit {code}: {clean(texto, 500)}")
+    print(f"opened {n}: {shown}")
 
 
 class Parser(argparse.ArgumentParser):
@@ -357,10 +534,22 @@ def main(argv=None):
     p.add_argument("--conta")
     p.add_argument("--abrir")
     p.add_argument("--bg", choices=["on", "off"])
+    p.add_argument("--estado", choices=["respondido"])
     p.set_defaults(fn=cmd_set)
+    p = sub.add_parser("delegate", parents=[com])
+    p.add_argument("--projeto", required=True)
+    p.add_argument("--nao-entregue", action="store_true")
+    p.set_defaults(fn=cmd_delegate)
+    p = sub.add_parser("abrir", parents=[com])
+    p.add_argument("--projeto", required=True)
+    p.add_argument("--mostrar", action="store_true")
+    p.set_defaults(fn=cmd_abrir)
     p = sub.add_parser("remove", parents=[com])
     p.add_argument("--projeto", required=True)
     p.set_defaults(fn=cmd_remove)
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     try:
         a = ap.parse_args(argv)
         raiz = os.path.abspath(a.raiz)
