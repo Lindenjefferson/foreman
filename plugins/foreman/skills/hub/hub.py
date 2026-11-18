@@ -16,6 +16,7 @@ Commands
   claim   --sessao <id> [--espera <s>]                        makes the session the owner (dono) of the hub; only
                                                               session-start.py calls it. sessoes keeps the last five;
                                                               the id matches [A-Za-z0-9._-]{1,100}, --espera is the lock wait
+                                                              in seconds, clamped to 0..10
 
 Every command takes --raiz <folder> (default: the current directory), --agora <UTC ISO> and
 --sistema nt|posix (default: os.name; the tests pass the last two). Every command except init and a global set
@@ -67,7 +68,7 @@ folder with .superpowers/ledger.jsonl), exists 1 (name taken, or the folder is t
 argument or a --raiz that is not a folder), open-failed 1, half-update 1, busy 1 (hub.lock stayed held for 10 s; the message names the file,
 which can be deleted when no hub command is running), bad-registry 2 (nothing was overwritten).
 """
-import argparse, contextlib, datetime, json, os, re, shlex, shutil, subprocess, sys, tempfile, time
+import argparse, contextlib, datetime, json, math, os, re, shlex, shutil, subprocess, sys, tempfile, time
 
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -473,8 +474,6 @@ def cmd_set(a, raiz, dados):
 
 
 def cmd_claim(a, raiz, dados):
-    if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", a.sessao):
-        raise Refuse("bad-name", "--sessao must match [A-Za-z0-9._-]{1,100}")
     dados["dono"] = a.sessao
     dados["sessoes"] = ([x for x in dados.get("sessoes", []) if x != a.sessao] + [a.sessao])[-5:]
     save(raiz, dados)
@@ -654,6 +653,12 @@ def main(argv=None):
             raise Refuse("is-project", "this folder is a project (it has a ledger); open the hub in the root folder")
         if a.agora and utc(a.agora) is None:
             raise Refuse("usage", f"--agora {a.agora!r} is not an ISO time")
+        if a.cmd == "claim":  # checked before the lock is waited for
+            if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", a.sessao):
+                raise Refuse("usage", "--sessao must match [A-Za-z0-9._-]{1,100}")
+            if not math.isfinite(a.espera):
+                raise Refuse("usage", "--espera must be a number of seconds")
+            a.espera = min(max(a.espera, 0), 10)
         if a.cmd == "delegate":  # read before taking the lock, so a slow writer of stdin never holds it
             if sys.stdin.isatty():
                 raise Refuse("usage", "the request text comes on stdin, not from a terminal")

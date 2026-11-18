@@ -19,7 +19,8 @@ A folder with .superpowers/hub.json (the payload's cwd itself) is a foreman hub,
 .superpowers/ledger.jsonl: then the project wins, one line says that hub.json is ignored and the output is the normal one.
 In a hub the hook prints at once one line saying that the folder is a hub and that kickoff does not run in it. On
 startup, resume and clear (not compact) with a session_id it runs `hub.py claim` (this plugin's own; 3 s, lock wait 1.5 s),
-which makes the session the owner of the hub, and prints claim's first error line if it fails. Then it prints
+which makes the session the owner of the hub, and prints claim's first error line if it fails (on a timeout, one
+line saying the claim did not finish). Then it prints
 `hub.py status` (5 s; on a timeout, one line saying so), all well inside the 10 s the hook has. A broken hub.json, a
 missing session_id, a failing or slow hub.py leave the file untouched and print at most those lines.
 Without a ledger or a git repository it does nothing; any failure exits 0,
@@ -125,6 +126,9 @@ def hub_status(payload, project):
             done = hub("claim", f"--sessao={sid}", "--espera", "1.5", timeout=3)
             if done.returncode != 0 and done.stderr.strip():
                 print(done.stderr.splitlines()[0][:300], flush=True)
+    except subprocess.TimeoutExpired:
+        print("The hub claim did not finish in time, so this session may not be the hub's owner; reopen it to "
+              "claim again.", flush=True)
     except Exception:  # claim is best effort: the session just is not the owner
         pass
     try:

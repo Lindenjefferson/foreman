@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PreToolUse hook (matcher Bash|PowerShell, see hooks.json): denies skipping the secret-scan pre-commit hook,
 anything that reaches the default branch while the delivery is in autonomous mode, a relative cd before a git step
-that lands work, a git checkout or restore that overwrites work not committed, a project command inside timeout, and the project's dev server outside background mode; asks the user before a delivery starts
+that lands work, a git checkout or restore that overwrites work not committed, a project command inside timeout, the project's dev server outside background mode, and what a
+foreman hub session may not do (approve, integrate, run kickoff); asks the user before a delivery starts
 outside Claude Code's auto permission mode (not the delivery's autonomous mode).
 
 With a ledger (any mode), denied in the foreground or background: a relative change of directory (cd, pushd,
@@ -28,8 +29,10 @@ master: as a refspec's target, with --all or --mirror, or with no refspec while 
 passes), a git merge while it is checked out (--abort and --quit pass), and a pull request merge (gh pr merge or glab
 mr merge or accept, also behind the tool's own options, and its api on pulls/<n>/merge or merge_requests/<n>/merge). A
 git checkout or switch earlier in the same command counts as what is checked out for the rest of it (a checkout with
--- or of a word that is no branch here restores files and changes nothing); a cd does not, so the check reads the
-session's directory. Pushing and merging the work branch pass; in supervised mode, or with no ledger, nothing here is
+-- or of a word that is no branch here restores files and changes nothing). Each step is read in the repository it
+runs in, in any session: the folder of its git -C, else of the latest cd to a rooted path before it, else the
+session's directory (a relative cd is not followed); that repository's default branch, checked-out branch, ledger
+mode and standing approval decide, as if the command ran there. Pushing and merging the work branch pass; in supervised mode, or with no ledger, nothing here is
 denied, and a push of the default branch (the same reading) asks the user: approval 2 is theirs, and a push of a work
 branch passes, since a permission rule cannot tell them apart inside a compound command. With the user's standing
 approval (ledger.py approve, read from approval.json beside the ledger), a publish passes when what it publishes is a
@@ -49,6 +52,15 @@ options that take a value, such as -o pipefail) or to eval is read the same way 
 of its own), and so is a command substitution outside quotes; one inside double quotes is not read. Permission rules
 match the command as plain text and cannot tell a flag from a message, which is why this check lives here. A command
 that does not parse (an unbalanced quote) passes, since the shell refuses it too.
+
+A foreman hub session (its payload session_id in "sessoes" of the .superpowers/hub.json found from the session's
+directory upwards, valid by hub.py's own check, and with no .superpowers/ledger.jsonl beside it: there the project
+wins) only reads and delegates. Denied in it, in the foreground or background, git -C included: git commit, merge,
+push, cherry-pick, rebase and init; any ledger.py command but status; gate.py; pre-commit-secret-scan.py
+--install-pre-commit (the first writing steps of a kickoff). The reason reads "hub session: <step> belongs to the
+project's session". A hub session that is not the "dono" (another hub session took over this root) is also denied
+hub.py delegate, add, set, remove and init; status and abrir pass. hub.py claim is denied in every session, since
+only the SessionStart hook runs it. Without a session_id, or with an invalid hub.json, the session is no hub session.
 
 A PowerShell call goes through the same checks, read with PowerShell's own rules. Text the command only passes
 along: single quotes literal ('' an escaped quote), double quotes with a backtick escape, the typographic quotes as
@@ -90,6 +102,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 GATE = os.path.join(HERE, "..", "skills", "manager", "gate.py")
 LEDGER = os.path.join(HERE, "..", "skills", "manager", "ledger.py")
+HUB = os.path.join(HERE, "..", "skills", "hub", "hub.py")
 LABEL = "rodar em desenvolvimento"
 
 
@@ -546,43 +559,55 @@ def merges_pull_request(arguments):
 
 def reaches_main(command, cwd, powershell=False):
     """Returns "deny" in autonomous mode when the command merges into or pushes the default branch, or merges a pull
-    request; "ask" for the same commands otherwise (supervised, or no ledger); None when neither. A git
-    checkout or switch earlier in the same command counts as the branch checked out for what follows it."""
-    calls = []
+    request; "ask" for the same commands otherwise (supervised, or no ledger); None when neither. Each step is read
+    in its own repository: its git -C folder, else the latest rooted cd before it, else cwd. A git checkout or switch
+    earlier in the same command counts as the branch checked out there for what follows it."""
+    calls, where = [], os.path.abspath(cwd)
     for program, arguments, _ in simple_commands(command, powershell):
-        if program == "git":
+        if program.lower() in CHANGES_DIRECTORY:
+            target = next((word for word in arguments if not word.startswith("-")), None)
+            if target and ROOTED.match(target) and os.path.isdir(folder_of(target, where)):
+                where = os.path.abspath(folder_of(target, where))
+        elif program == "git":
             name, rest, _ = git_command(arguments)
+            named = next((after for word, after in zip(arguments, arguments[1:]) if word == "-C"), None)
+            folder = os.path.abspath(folder_of(named, where)) if named else where
             if name in ("push", "merge", "checkout", "switch"):
-                calls.append((program, name, rest))
+                calls.append((program, name, rest, folder if os.path.isdir(folder) else where))
         elif program in ("gh", "glab"):
-            calls.append((program, "", arguments))
+            calls.append((program, "", arguments, where))
     if not any(name in ("push", "merge") or (program != "git" and merges_pull_request(rest))
-               for program, name, rest in calls):
+               for program, name, rest, _ in calls):
         return None
-    state = ledger_state(cwd)
-    autonomous = bool(state) and state[0].autonomous(state[2])
-    main, current = main_branch(cwd), git_out(cwd, "branch", "--show-current")
-    published = set()
-    for program, name, rest in calls:
+    repos = {}
+    for program, name, rest, folder in calls:
+        if folder not in repos:
+            state = ledger_state(folder)
+            repos[folder] = {"state": state, "autonomous": bool(state) and state[0].autonomous(state[2]),
+                             "main": main_branch(folder), "current": git_out(folder, "branch", "--show-current"),
+                             "published": set()}
+        repo = repos[folder]
+        state, autonomous, main, current = repo["state"], repo["autonomous"], repo["main"], repo["current"]
         if program != "git":
             if merges_pull_request(rest) and not autonomous:
                 return "ask"
-            if autonomous and merges_pull_request(rest) and not gated(cwd, "HEAD", state):
+            if autonomous and merges_pull_request(rest) and not gated(folder, "HEAD", state):
                 return "deny"
         elif name in ("checkout", "switch"):
-            current = switched_to(name, rest, cwd) or current
+            repo["current"] = switched_to(name, rest, folder) or current
         elif main and name == "push" and push_reaches(rest, main, current):
             if not autonomous:
                 return "ask"
             sources = push_sources(rest, main, current)
-            if sources is None or not all(source in published or gated(cwd, source, state) for source in sources):
+            if sources is None or not all(source in repo["published"] or gated(folder, source, state)
+                                          for source in sources):
                 return "deny"
         elif main and name == "merge" and current == main and not {"--abort", "--quit"} & set(rest):
             if not autonomous:
                 return "ask"
-            if not gated(cwd, merged_ref(rest), state):
+            if not gated(folder, merged_ref(rest), state):
                 return "deny"
-            published.add(main)
+            repo["published"].add(main)
     return None
 
 
@@ -613,19 +638,80 @@ def commit_skips(arguments):
 UNATTENDED = {"auto", "bypassPermissions"}
 
 
+def script_words(segment, name):
+    """The words after the script called name in the segment (past ledger.py's --ledger), or None without it."""
+    words = [word for word in segment if word]
+    found = [i for i, word in enumerate(words) if os.path.basename(word.replace("\\", "/")).lower() == name]
+    if not found:
+        return None
+    rest = words[found[0] + 1:]
+    while rest and rest[0].startswith("--ledger"):
+        rest = rest[1:] if "=" in rest[0] else rest[2:]
+    return rest
+
+
 def starts_delivery(command, powershell=False):
     """True when the command runs ledger.py start (also start --next): the delivery begins there."""
-    for _, arguments, segment in simple_commands(command, powershell):
-        words = [word for word in segment if word]
-        found = [i for i, word in enumerate(words) if os.path.basename(word.replace("\\", "/")) == "ledger.py"]
-        if not found:
+    return any((script_words(segment, "ledger.py") or [])[:1] == ["start"]
+               for _, _, segment in simple_commands(command, powershell))
+
+
+def hub_session(cwd, session_id):
+    """"owner" or "former" when session_id is in sessoes of the hub.json found from cwd upwards; None with no
+    session_id, no hub.json, an invalid one (hub.py's own valid()) or one beside a ledger: the project wins."""
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    folder = os.path.abspath(cwd)
+    while not os.path.isfile(os.path.join(folder, ".superpowers", "hub.json")):
+        if os.path.dirname(folder) == folder:
+            return None
+        folder = os.path.dirname(folder)
+    if os.path.exists(os.path.join(folder, ".superpowers", "ledger.jsonl")):
+        return None
+    spec = importlib.util.spec_from_file_location("foreman_hub", HUB)
+    hub = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hub)
+    try:
+        with open(os.path.join(folder, ".superpowers", "hub.json"), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not hub.valid(data) or session_id not in data.get("sessoes", []):
+        return None
+    return "owner" if data.get("dono") == session_id else "former"
+
+
+HUB_GIT = {"commit", "merge", "push", "cherry-pick", "rebase", "init"}
+HUB_WRITES = {"delegate", "add", "set", "remove", "init"}
+
+
+def hub_denial(command, powershell, role):
+    """Why a hub session (role "owner" or "former", None for any other session) may not run the command, or None.
+    hub.py claim is denied in every session: only the SessionStart hook runs it."""
+    for program, arguments, segment in simple_commands(command, powershell):
+        hub = script_words(segment, "hub.py")
+        if hub is not None and hub[:1] == ["claim"]:
+            return ("hub.py claim is run only by the SessionStart hook: a session becomes the hub's owner by "
+                    "starting or resuming in the hub folder.")
+        if role is None:
             continue
-        rest = words[found[0] + 1:]
-        while rest and rest[0].startswith("--ledger"):
-            rest = rest[1:] if "=" in rest[0] else rest[2:]
-        if rest[:1] == ["start"]:
-            return True
-    return False
+        if role == "former" and hub is not None and hub[:1] and hub[0] in HUB_WRITES:
+            return ("another hub session took over this root: only the newest hub session writes the registry. "
+                    "This one still reads (hub.py status) and opens projects (hub.py abrir); work from the newest "
+                    "hub window.")
+        ledger, step = script_words(segment, "ledger.py"), None
+        if program == "git" and git_command(arguments)[0] in HUB_GIT:
+            step = "git " + git_command(arguments)[0]
+        elif ledger is not None and ledger[:1] != ["status"]:
+            step = " ".join(["ledger.py"] + ledger[:1])
+        elif script_words(segment, "gate.py") is not None:
+            step = "gate.py"
+        elif "--install-pre-commit" in segment and script_words(segment, "pre-commit-secret-scan.py") is not None:
+            step = "pre-commit-secret-scan.py --install-pre-commit"
+        if step:
+            return (f"hub session: {step} belongs to the project's session. The hub only reads and delegates: send "
+                    "the request with hub.py delegate, and the user approves in the project's window.")
+    return None
 
 
 CHANGES_DIRECTORY = {"cd", "pushd", "set-location", "sl", "chdir", "push-location"}
@@ -718,7 +804,8 @@ def main():
     mode = payload.get("permission_mode")
     found = {}
     commands = lambda folder: found.setdefault(folder, project_commands(folder))
-    if mode and mode not in UNATTENDED and starts_delivery(command, powershell):
+    hub_reason = hub_denial(command, powershell, hub_session(cwd, payload.get("session_id")))
+    if not hub_reason and mode and mode not in UNATTENDED and starts_delivery(command, powershell):
         json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                                           "permissionDecisionReason": (
                                               f"This session is in {mode} mode, not auto: the delivery would stop at "
@@ -726,8 +813,10 @@ def main():
                                               "restart the session in auto mode first?")}}, sys.stdout)
         return
     skips = skips_hook(command, powershell)
-    publishes = None if skips else reaches_main(command, cwd, powershell)
-    if skips:
+    publishes = None if skips or hub_reason else reaches_main(command, cwd, powershell)
+    if hub_reason:
+        reason = hub_reason
+    elif skips:
         reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n or a core.hooksPath override), and a "
                   "secret committed stays in the history. Commit without it; if the hook blocks, fix what it reports "
                   "(a false positive is allowlisted by the user, as its message explains).")

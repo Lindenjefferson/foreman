@@ -17,11 +17,13 @@ def project(commands):
     return folder
 
 
-def run(folder, command, background=False, tool="Bash", cwd=None, mode=None):
+def run(folder, command, background=False, tool="Bash", cwd=None, mode=None, session=None):
     payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": cwd or folder,
                "tool_input": {"command": command, "run_in_background": background}}
     if mode:
         payload["permission_mode"] = mode
+    if session:
+        payload["session_id"] = session
     done = subprocess.run([sys.executable, SCRIPT], cwd=tempfile.gettempdir(), input=json.dumps(payload),
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
     reason = None
@@ -407,6 +409,128 @@ check("with permissions bypassed it passes", run(bare_start, START, mode="bypass
 check("another ledger command passes in any mode", run(bare_start, START.replace("start --slug x", "status"),
                                                        mode="default")[1] is None)
 check("with no permission_mode in the payload it passes", run(bare_start, START)[1] is None)
+
+
+# T5: a hub session (its session_id in sessoes of the hub.json found from cwd upwards) cannot approve, integrate or
+# run kickoff, and only the owner (dono) writes the registry
+def git_repo(folder, autonomous=False):
+    for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t"),
+                 ("commit", "-q", "--allow-empty", "-m", "base")):
+        subprocess.run(["git", *args], cwd=folder, check=True, capture_output=True)
+    subprocess.run([sys.executable, LEDGER_PY, "start", "--slug", "x"], cwd=folder, check=True, capture_output=True)
+    if autonomous:
+        until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=8)
+        subprocess.run([sys.executable, LEDGER_PY, "mode", "autonomous", "--until", until.isoformat(timespec="seconds")],
+                       cwd=folder, check=True, capture_output=True)
+    return folder.replace(os.sep, "/")
+
+
+hub_root = tempfile.mkdtemp(prefix="hubroot_")
+HUB_JSON = os.path.join(hub_root, ".superpowers", "hub.json")
+os.makedirs(os.path.dirname(HUB_JSON))
+
+
+def hub_json(text):
+    with open(HUB_JSON, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
+hub_json(json.dumps({"abrir": None, "bg": None, "projetos": {}, "dono": "h2", "sessoes": ["h1", "h2"]}))
+os.makedirs(os.path.join(hub_root, "proj"))
+hub_proj = git_repo(os.path.join(hub_root, "proj"))
+PY = "python C:/p/plugins/foreman/skills"
+
+
+def hub_denied(command, session="h2", tool="Bash", background=False, cwd=None, text="hub session"):
+    reason = run(cwd or hub_root, command, tool=tool, background=background, session=session)[1]
+    return reason is not None and reason[0] == "deny" and text in reason[1]
+
+
+for command in (f"{PY}/manager/ledger.py note --text x", f"{PY}/manager/ledger.py plan --path p",
+                f"{PY}/manager/ledger.py mode autonomous", f"{PY}/manager/ledger.py waive --check x",
+                f"{PY}/manager/ledger.py extend --tasks 1", f"{PY}/manager/gate.py --report s",
+                START, f"{PY}/manager/ledger.py --ledger x.jsonl note --text x"):
+    check(f"AC_T5_1 a hub session cannot write a ledger nor run the gate: {command!r}", hub_denied(command),
+          str(run(hub_root, command, session="h2")))
+check("AC_T5_1 the denial names the step and the project's session",
+      "belongs to the project's session" in (run(hub_root, f"{PY}/manager/gate.py", session="h2")[1] or ("", ""))[1])
+check("AC_T5_1 ledger.py start in a hub session is denied, not asked", (run(hub_root, START, session="h2", mode="default")[1] or ("",))[0] == "deny")
+for command in (f"{PY}/manager/ledger.py status", f"{PY}/manager/ledger.py status --json"):
+    check(f"AC_T5_1 a hub session reads a ledger: {command!r}", run(hub_root, command, session="h2")[1] is None,
+          str(run(hub_root, command, session="h2")))
+for command in ("git commit -m x", "git merge b", "git push", "git cherry-pick c", "git rebase main",
+                f"git -C {hub_proj} merge b", f"git -C {hub_proj} commit -m x", "echo ok && git push origin feat/x"):
+    for tool in ("Bash", "PowerShell"):
+        check(f"AC_T5_2 a hub session cannot commit or integrate ({tool}): {command!r}", hub_denied(command, tool=tool),
+              str(run(hub_root, command, tool=tool, session="h2")))
+check("AC_T5_2 in the background too", hub_denied("git merge b", background=True))
+check("AC_T5_2 the former owner too", hub_denied("git commit -m x", session="h1"))
+check("AC_T5_2 from a subfolder of the root too", hub_denied("git commit -m x", cwd=os.path.join(hub_root, "proj")))
+for command in ("git status", "git log -n 3", f"git -C {hub_proj} status", f"git -C {hub_proj} log"):
+    for tool in ("Bash", "PowerShell"):
+        check(f"AC_T5_2 a hub session reads git ({tool}): {command!r}",
+              run(hub_root, command, tool=tool, session="h2")[1] is None, str(run(hub_root, command, tool=tool, session="h2")))
+for command in ("git init", "git init proj2",
+                "sh C:/p/plugins/foreman/hooks/python.sh C:/p/plugins/foreman/hooks/pre-commit-secret-scan.py --install-pre-commit"):
+    check(f"AC_T5_3 a hub session cannot start a kickoff: {command!r}", hub_denied(command),
+          str(run(hub_root, command, session="h2")))
+WRITES = ("delegate --projeto proj", "add --nome a --pasta C:/a", "set --bg on", "remove --projeto a", "init")
+for sub_command in WRITES:
+    command = f"{PY}/hub/hub.py {sub_command}"
+    check(f"AC_T5_4 a former hub session cannot write the registry: {sub_command!r}",
+          hub_denied(command, session="h1", text="another hub session took over this root"),
+          str(run(hub_root, command, session="h1")))
+    check(f"AC_T5_4 the owner writes the registry: {sub_command!r}", run(hub_root, command, session="h2")[1] is None,
+          str(run(hub_root, command, session="h2")))
+check("AC_T5_4 in PowerShell too", hub_denied(f"& python {PY}/hub/hub.py delegate --projeto proj", session="h1",
+                                              tool="PowerShell", text="took over"))
+for sub_command in ("status", "status --json", "abrir --projeto proj"):
+    check(f"AC_T5_4 a former hub session still reads and opens: {sub_command!r}",
+          run(hub_root, f"{PY}/hub/hub.py {sub_command}", session="h1")[1] is None)
+for session, folder in (("h2", hub_root), ("h1", hub_root), ("p1", bare), (None, bare)):
+    reason = run(folder, f"{PY}/hub/hub.py claim --sessao {session}", session=session)[1]
+    check(f"AC_T5_4 hub.py claim from a shell is denied in any session ({session})",
+          reason and reason[0] == "deny" and "SessionStart" in reason[1], str(reason))
+proj_dir = os.path.join(hub_root, "proj")
+for command in ("git commit -m x", "git merge b", f"{PY}/manager/ledger.py note --text x", "git push origin main"):
+    check(f"AC_T5_5 a project session inside the hub root works as today: {command!r}",
+          run(proj_dir, command, session="p1") == run(proj_dir, command)
+          and (run(proj_dir, command)[1] or ("ask",))[0] == "ask", str(run(proj_dir, command, session="p1")))
+check("AC_T5_6 no session_id: nothing of the hub is denied", run(hub_root, "git commit -m x")[1] is None)
+hub_json("{broken")
+check("AC_T5_6 an invalid hub.json: nothing of the hub is denied",
+      run(hub_root, "git commit -m x", session="h2")[1] is None)
+hub_json(json.dumps({"projetos": [], "dono": "h2", "sessoes": ["h2"]}))
+check("AC_T5_6 a hub.json of the wrong shape: nothing of the hub is denied",
+      run(hub_root, "git commit -m x", session="h2")[1] is None)
+hub_json(json.dumps({"projetos": {}, "dono": "h2", "sessoes": ["h2"]}))
+os.makedirs(os.path.join(hub_root, ".superpowers"), exist_ok=True)
+open(os.path.join(hub_root, ".superpowers", "ledger.jsonl"), "w").close()
+check("AC_T5_6 a hub.json beside a ledger is ignored: the project wins",
+      run(hub_root, "git commit -m x", session="h2")[1] is None)
+os.remove(os.path.join(hub_root, ".superpowers", "ledger.jsonl"))
+check("AC_T5_6 the hub is back once the ledger is gone", hub_denied("git commit -m x"))
+
+# AC-T5-7: git -C <folder> and cd <absolute> are read against that folder's repository, in any session
+supervised = git_repo(tempfile.mkdtemp(prefix="t5sup_"))
+autonomous = git_repo(tempfile.mkdtemp(prefix="t5auto_"), autonomous=True)
+outside = tempfile.mkdtemp(prefix="t5out_")
+for command in (f'git -C "{supervised}" merge feat/x', f'git -C "{supervised}" push origin main',
+                f'cd "{supervised}" && git push origin main', f'cd "{supervised}" && git merge feat/x'):
+    check(f"AC_T5_7 supervised elsewhere: asks {command!r}", asks(command, outside), str(run(outside, command)))
+for command in (f'git -C "{autonomous}" merge feat/x', f'git -C "{autonomous}" push origin main',
+                f'cd "{autonomous}" && git push origin main', f'cd "{autonomous}"; git merge feat/x'):
+    check(f"AC_T5_7 autonomous elsewhere: denied {command!r}", (run(outside, command)[1] or ("",))[0] == "deny",
+          str(run(outside, command)))
+check("AC_T5_7 in PowerShell too", (run(outside, f"Set-Location {autonomous}; git push origin main",
+                                        tool="PowerShell")[1] or ("",))[0] == "deny")
+check("AC_T5_7 the target, not the session's folder: from an autonomous repo, a supervised one asks",
+      (run(autonomous, f'git -C "{supervised}" push origin main')[1] or ("",))[0] == "ask")
+check("AC_T5_7 the target, not the session's folder: from a supervised repo, an autonomous one is denied",
+      (run(supervised, f'cd "{autonomous}" && git push origin main')[1] or ("",))[0] == "deny")
+for command in (f'git -C "{autonomous}" push origin feat/x', f'cd "{autonomous}" && git status',
+                f'git -C "{outside}" push origin main'):
+    check(f"AC_T5_7 passes {command!r}", run(outside, command)[1] is None, str(run(outside, command)))
 
 config = json.load(open(os.path.join(HOOKS, "hooks.json"), encoding="utf-8"))
 pre = config["hooks"]["PreToolUse"]

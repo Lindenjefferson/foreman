@@ -893,7 +893,7 @@ c6 = root()
 run(c6, "init")
 for bad in ("a b", "a/b", "", "x" * 101, "a;b"):
     rb = run(c6, "claim", "--sessao=" + bad)
-    check(f"FIX2_T4 claim refuses the id {bad[:12]!r}", rb.returncode == 1 and out(rb).split(":")[0] in ("bad-name", "usage"), out(rb))
+    check(f"FIX2_T4 claim refuses the id {bad[:12]!r} with usage", rb.returncode == 1 and out(rb).startswith("usage"), out(rb))
 check("FIX2_T4 claim takes a normal id", run(c6, "claim", "--sessao=ab.C_9-1").returncode == 0)
 lk6 = os.path.join(c6, ".superpowers", "hub.lock")
 with open(lk6, "w") as fh:
@@ -910,6 +910,32 @@ check("FIX2_T4 a lock with undecodable bytes is not a traceback", run(c6, "claim
 os.utime(lk6, (time.time() - 120, time.time() - 120))
 rb = run(c6, "claim", "--sessao=s3")
 check("FIX2_T4 a stale lock of undecodable bytes is taken over", rb.returncode == 0 and "Traceback" not in rb.stderr, out(rb))
+
+# T5: the leftovers of T4
+for bad in ("nan", "inf", "-inf"):
+    rb = run(c6, "claim", "--sessao=s1", "--espera", bad)
+    check(f"T5 claim --espera {bad} is usage", rb.returncode == 1 and out(rb).startswith("usage"), out(rb))
+waits = []
+
+
+@contextlib.contextmanager
+def spy_lock(raiz, wait=10, stale=30):
+    waits.append(wait)
+    yield
+
+
+real_lock, hub.locked = hub.locked, spy_lock
+with contextlib.redirect_stderr(io.StringIO()):
+    for espera in ("1e9", "-5", "2.5"):
+        hub.main(["claim", "--sessao=s1", "--espera", espera, "--raiz", c6])
+hub.locked = real_lock
+check("T5 claim --espera is clamped to 0..10", waits == [10, 0, 2.5], waits)
+lk7 = os.path.join(c6, ".superpowers", "hub.lock")
+with open(lk7, "w") as fh:
+    fh.write("held")
+rb = run(c6, "claim", "--sessao=a b", "--espera", "0.2")
+check("T5 a bad --sessao is usage before the lock is waited for", out(rb).startswith("usage"), out(rb))
+os.remove(lk7)
 
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")

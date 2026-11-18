@@ -200,6 +200,25 @@ rel = subprocess.run([sys.executable, SCRIPT], cwd=os.path.dirname(hubdir), inpu
     {"source": "startup", "cwd": os.path.basename(hubdir), "session_id": "rel1"}), capture_output=True, text=True,
     encoding="utf-8")
 check("hub: a relative cwd works", read_reg().get("dono") == "rel1" and "No projects" in rel.stdout, rel.stdout + rel.stderr)
+reg()
+SLOW_CLAIM = f"""
+import importlib.util, subprocess
+spec = importlib.util.spec_from_file_location("session_start", {SCRIPT!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+real = subprocess.run
+def slow(args, **kw):
+    if "claim" in args:
+        raise subprocess.TimeoutExpired(args, kw.get("timeout"))
+    return real(args, **kw)
+subprocess.run = slow
+module.main()
+"""
+r = subprocess.run([sys.executable, "-c", SLOW_CLAIM], input=json.dumps({"source": "startup", "cwd": hubdir,
+                   "session_id": "slow1"}), capture_output=True, text=True, encoding="utf-8", errors="replace")
+lines = r.stdout.splitlines()
+check("hub: a claim that times out says so in one line, then the status follows", len(lines) > 2
+      and "claim" in lines[1] and "did not finish" in lines[1] and "No projects" in r.stdout, r.stdout + r.stderr)
 proj_hub = tempfile.mkdtemp(prefix="sessionstart_projhub_")
 os.makedirs(os.path.join(proj_hub, ".superpowers"))
 open(os.path.join(proj_hub, ".superpowers", "hub.json"), "w").write(EMPTY)
