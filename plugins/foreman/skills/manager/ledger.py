@@ -82,17 +82,19 @@ _(...)_ placeholder), the first cycle closes only once one of its qa runs has --
 cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
 
 The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: status --json
-gives full_qa_blockers, each missing item (the reviewer's PASS after the latest dev run, a waiver included; the version,
-as the gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the cleanup task,
-or a note that names cleanup; each deferred item with no decision), and add --full is refused while it lists any. A
-ledger whose last cycle ran qa --full under an earlier version still reads: that run is full_qa, as any other.
+gives full_qa_blockers, each missing item (the reviewer's PASS after the latest dev run, a waiver included; a commit
+after its head that the gate's Reviewed check asks a review for, the plan and docs/lessons.md exempt as there; the
+version, as the gate's Version check reads the Versão line at the ledger's root against the base; with a plan, the
+cleanup task, or a note that names cleanup; each deferred item with no decision), and add --full is refused while it
+lists any. A ledger whose last cycle ran qa --full under an earlier version still reads: that run is full_qa, as any other.
 
 Cycles and fix rounds
 ---------------------
 
 A cycle is a few dev tasks followed by one reviewer pass over their diff and one qa pass; the two run in parallel
-(the full qa of step 6 waits for the reviewer instead). It closes when the latest reviewer PASS came after the latest dev run, qa PASSed after the cycle's latest regular task,
-and qa ran again after every fix of a blocking (FAIL) finding. The next regular dev run opens the next cycle. A fix
+(the full qa of step 6 waits for the reviewer instead). It closes when the latest reviewer PASS came after the latest
+dev run, qa PASSed after the cycle's latest regular task, and qa ran again after every fix of a blocking (FAIL)
+finding. The next regular dev run opens the next cycle. A fix
 round (task fix-N) and the cleanup task (task cleanup) stay in the current cycle, even a closed one: they need a
 reviewer pass, and qa again only when a FAIL came before them.
 
@@ -1225,8 +1227,9 @@ def heartbeat(entries, auto):
 
 def full_qa_blockers(entries, ledger):
     """What must come before the delivery's only full qa run, at its final head, so the full suite runs once: the
-    reviewer's PASS after the latest dev run, the version raised as the gate's Version check wants it, the cleanup run
-    or a note naming it skipped (with a plan), and every deferred item decided."""
+    reviewer's PASS after the latest dev run, with no commit after its head that the gate's Reviewed check would ask a
+    review for, the version raised as the gate's Version check wants it, the cleanup run or a note naming it skipped
+    (with a plan), and every deferred item decided."""
     if preparing(entries):
         return []
     found = []
@@ -1235,22 +1238,28 @@ def full_qa_blockers(entries, ledger):
     reviewed = [index for index, entry in enumerate(done) if entry["agent"] == "reviewer"]
     if last_dev >= 0 and (not reviewed or reviewed[-1] < last_dev or done[reviewed[-1]]["verdict"] != "PASS"):
         found.append("the reviewer has not PASSed after the latest dev run (manager step 6)")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "foreman_gate", os.path.join(os.path.dirname(os.path.abspath(__file__)), "gate.py"))
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
     root = os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
     base = entries[0].get("base")
-    if base and os.path.isfile(os.path.join(root, "CLAUDE.md")):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "foreman_gate", os.path.join(os.path.dirname(os.path.abspath(__file__)), "gate.py"))
-        gate = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(gate)
-        here = os.getcwd()
-        try:
-            os.chdir(root)
+    plans = [entry["plan"] for entry in entries if entry["type"] == "plan"]
+    here = os.getcwd()
+    try:
+        os.chdir(root)
+        if reviewed and not found:
+            ok, detail = gate.reviewed({"reviewer": [done[reviewed[-1]]],
+                                        "plan": plans[-1] if plans else entries[0].get("plan")})
+            if not ok:
+                found.append(f"reviewed: {detail}")
+        if base and os.path.isfile("CLAUDE.md"):
             ok, detail = gate.version(base)[:2]
-        finally:
-            os.chdir(here)
-        if not ok:
-            found.append(f"version: {detail}")
+            if not ok:
+                found.append(f"version: {detail}")
+    finally:
+        os.chdir(here)
     planned = entries[0].get("plan") or any(entry["type"] == "plan" for entry in entries)
     if planned and not any(entry["agent"] == "dev" and entry.get("task") == "cleanup" for entry in runs(entries)) and \
             not any(entry["type"] == "note" and "cleanup" in entry["text"].lower() for entry in entries):

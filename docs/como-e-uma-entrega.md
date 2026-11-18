@@ -31,7 +31,7 @@ Você aprova ou pede mudança. Depois disso, a sessão só volta a parar para um
 Em cada ciclo:
 
 1. **`dev`**, um por tarefa (as que não mexem nos mesmos arquivos rodam em paralelo, cada uma na sua cópia do repositório): escreve o teste, confere que ele falha, implementa e atualiza a doc do módulo.
-2. **`reviewer` e `qa` ao mesmo tempo**, sobre o ciclo inteiro: o reviewer lê o diff e só reporta o que consegue provar, e o qa roda os testes e a interface das telas que o ciclo tocou e confere cada critério de aceite; a suíte inteira roda no último ciclo e no head final.
+2. **`reviewer` e `qa` ao mesmo tempo**, sobre o ciclo inteiro: o reviewer lê o diff e só reporta o que consegue provar, e o qa roda os testes e a interface das telas que o ciclo tocou e confere cada critério de aceite; a suíte inteira roda uma vez, no head final (passo 6).
 3. **Uma rodada de correção**: o `dev` corrige todos os achados de uma vez, e o que ele tocou é revisado e testado de novo.
 
 Enquanto isso, abaixo do prompt, até três linhas dizem em que ciclo a entrega está, quantas tarefas faltam, o que está rodando e o que espera por você. O `/andamento` abre o painel com o detalhe.

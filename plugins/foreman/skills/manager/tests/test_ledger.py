@@ -2888,7 +2888,9 @@ check("add --full is refused while any of them is missing, naming each", r.retur
 commit_one("VERSION", "1.1.0\n")
 in_one("resolve", "--id", "D1", "--decision", "discarded: no user sees it")
 in_one("note", "--text", "cleanup skipped: nothing left duplicated or dead")
-check("once the version rose, the cleanup was noted as skipped and every deferred item decided, nothing blocks it",
+in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+check("once the version rose (and the reviewer PASSed that commit), the cleanup was noted as skipped and every "
+      "deferred item decided, nothing blocks it",
       json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [] and
       in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T2")
@@ -2903,9 +2905,33 @@ check("a reviewer FAIL after the latest dev run still blocks the full qa",
       any("reviewer" in item for item in json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]))
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "fix-1")
 in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+os.makedirs(os.path.join(one, "docs"), exist_ok=True)
+commit_one("docs/lessons.md", "- a lesson\n")
+commit_one("plan.md", "# plan\n\n### T1\n- Goal: a\n\n## Errata\n- a line\n")
+check("a commit of only the plan or docs/lessons.md after the reviewer's PASS does not block the full qa",
+      json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [])
+commit_one("src.txt", "late\n")
+blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("a commit of another file after the reviewer's PASS blocks the full qa, as the gate's Reviewed check would",
+      any("src.txt" in item and "reviewed head" in item for item in blockers) and r.returncode != 0
+      and "src.txt" in r.stderr, (blockers, r.stderr))
+in_one("add", "--agent", "reviewer", "--verdict", "PASS")
 check("once the reviewer PASSed the fix, nothing blocks the full qa at the final head",
       json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == []
       and in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
+
+QUIET = ".superpowers/no-dev.jsonl"
+run("start", "--slug", "no-dev", ledger=QUIET)
+check("a delivery with no dev run has no reviewer blocker",
+      not any("reviewer" in item for item in status(QUIET)["full_qa_blockers"]), status(QUIET)["full_qa_blockers"])
+WAIVED = ".superpowers/waived.jsonl"
+run("start", "--slug", "waived", ledger=WAIVED)
+add("dev", "DONE", "T1", ledger=WAIVED)
+add("reviewer", "FAIL", open_count=1, ledger=WAIVED)
+r = run("waive", "--agent", "reviewer", "--reason", "the finding is wrong", ledger=WAIVED)
+check("a waived reviewer FAIL unblocks the full qa", r.returncode == 0
+      and not any("review" in item for item in status(WAIVED)["full_qa_blockers"]), (r.stderr, status(WAIVED)))
 
 # A ledger of an earlier version whose last cycle ran qa --full before the reviewer: status and the gate still read
 # it, and the gate asks for the full qa again once the head moved past it
