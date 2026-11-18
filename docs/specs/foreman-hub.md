@@ -198,7 +198,7 @@ Conferido contra as práticas do dono (arquivo de contexto só com necessidade; 
 
 - Em toda sessão com o plugin, projeto ou hub: a descrição de uma frase da skill `hub` na lista de skills. Nada mais.
 - Só quando o manager é carregado: uma frase a mais na regra do `PushNotification`.
-- Só na pasta do hub: a saída do `session-start.py` (uma linha e o status), também depois de uma compactação.
+- Só na pasta do hub: a saída do `session-start.py` (a linha do hub), também depois de uma compactação.
 - Nenhum `CLAUDE.md`, arquivo de regras ou de memória novo; o molde do `CLAUDE.md` dos projetos não muda; o `CLAUDE.md` deste repositório ganha uma linha no mapa e segue abaixo de 200 linhas. As três regras que não podem falhar (não aprovar, não rodar kickoff, um hub só) estão no `PreToolUse`, não no texto da skill, que fica em até 40 linhas.
 
 ## Limites aceitos
