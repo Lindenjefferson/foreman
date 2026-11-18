@@ -1096,6 +1096,7 @@ r = run("add", "--agent", "dev", "--task", "T2", "--verdict", "DONE", "--full", 
 check("--full is refused on the dev", r.returncode != 0 and "--full" in r.stderr, r.stderr)
 check("refused --full runs write nothing", len(status(FULL)["runs"]) == 1)
 FIRST, PLAIN, SECOND = report_file("first.md"), report_file("plain.md"), report_file("second.md")
+add("reviewer", "PASS", ledger=FULL)
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--report", FIRST, ledger=FULL)
 state = status(FULL)
 check("--full on qa is stored on the run and shows as full_qa",
@@ -1106,8 +1107,8 @@ state = status(FULL)
 check("a qa run without --full has no full key and does not replace full_qa",
       "full" not in state["qa"][0] and state["full_qa"]["report"] == FIRST, state["full_qa"])
 add("dev", "DONE", "T3", ledger=FULL)
-run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--report", SECOND, ledger=FULL)
 add("reviewer", "PASS", ledger=FULL)
+run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--report", SECOND, ledger=FULL)
 add("dev", "DONE", "T4", ledger=FULL)
 state = status(FULL)
 check("full_qa is the latest full qa run across the whole delivery, even from an earlier cycle",
@@ -2846,7 +2847,7 @@ check("a module doc still collides with nothing else, and other files still coll
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]) == ["src/a.kt (T1 touches src/a.kt)"],
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]))
 
-# The newcomer's reading goes in the ledger; a one-cycle delivery runs its full suite once, after what changes it
+# The newcomer's reading goes in the ledger; a delivery runs its full suite once, after what changes its head
 one = os.path.join(repo, "one-cycle")
 os.makedirs(one)
 for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t")):
@@ -2892,8 +2893,63 @@ check("once the version rose, the cleanup was noted as skipped and every deferre
       in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
 in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "T2")
 in_one("scope", "--cycle", "2", "--tasks", "T2")
-check("a delivery of more than one cycle has no such blockers",
-      json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == [])
+blockers = json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]
+r = in_one("add", "--agent", "qa", "--verdict", "PASS", "--full")
+check("a delivery of several cycles has the same blockers, and the full qa waits for the reviewer's PASS after the "
+      "latest dev run", blockers == ["the reviewer has not PASSed after the latest dev run (manager step 6)"]
+      and r.returncode != 0 and "reviewer" in r.stderr, (blockers, r.stderr))
+in_one("add", "--agent", "reviewer", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1")
+check("a reviewer FAIL after the latest dev run still blocks the full qa",
+      any("reviewer" in item for item in json.loads(in_one("status", "--json").stdout)["full_qa_blockers"]))
+in_one("add", "--agent", "dev", "--verdict", "DONE", "--task", "fix-1")
+in_one("add", "--agent", "reviewer", "--verdict", "PASS")
+check("once the reviewer PASSed the fix, nothing blocks the full qa at the final head",
+      json.loads(in_one("status", "--json").stdout)["full_qa_blockers"] == []
+      and in_one("add", "--agent", "qa", "--verdict", "PASS", "--full").returncode == 0)
+
+# A ledger of an earlier version whose last cycle ran qa --full before the reviewer: status and the gate still read
+# it, and the gate asks for the full qa again once the head moved past it
+old = os.path.join(repo, "old-full")
+os.makedirs(os.path.join(old, ".superpowers"))
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t")):
+    subprocess.run(["git", *args], cwd=old, check=True, capture_output=True)
+
+
+def commit_old(name, text):
+    with open(os.path.join(old, name), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    for args in (("add", name), ("commit", "-q", "-m", name)):
+        subprocess.run(["git", *args], cwd=old, check=True, capture_output=True)
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=old, capture_output=True, text=True).stdout.strip()
+
+
+ok_cmd, ui_cmd = (f"`{sys.executable} -c \"print('{word}')\"`" for word in ("ok", "ui"))
+commit_old("CLAUDE.md", f"# p\n\n## Comandos\n\n- Testes: {ok_cmd}\n- Verificação de interface: {ui_cmd}\n")
+commit_old(".gitignore", ".superpowers/\n")
+subprocess.run(["git", "switch", "-q", "-c", "feat/old"], cwd=old, check=True, capture_output=True)
+tip = commit_old("src.txt", "a\n")
+with open(os.path.join(old, ".superpowers", "ledger.jsonl"), "w", encoding="utf-8", newline="\n") as handle:
+    for entry in ({"type": "start", "slug": "old", "base": "main"},
+                  {"type": "run", "agent": "dev", "task": "T1", "verdict": "DONE", "open": 0, "head": tip},
+                  {"type": "run", "agent": "reviewer", "verdict": "PASS", "open": 0, "head": tip},
+                  {"type": "run", "agent": "qa", "verdict": "PASS", "open": 0, "head": tip, "interface": True},
+                  {"type": "run", "agent": "dev", "task": "T2", "verdict": "DONE", "open": 0, "head": tip},
+                  {"type": "run", "agent": "qa", "verdict": "PASS", "open": 0, "head": tip, "full": True},
+                  {"type": "run", "agent": "reviewer", "verdict": "PASS", "open": 0, "head": tip}):
+        handle.write(json.dumps({**entry, "at": "2026-01-01T00:00:00+00:00"}) + "\n")
+r = run("status", "--json", cwd=old)
+state = json.loads(r.stdout) if r.returncode == 0 else {}
+check("an older ledger with a last-cycle qa --full before the reviewer still reads: full_qa is that run",
+      (state.get("full_qa") or {}).get("head") == tip and state.get("cycle") == 2 and state.get("ready_for_gate")
+      and state.get("full_qa_blockers") == [], (r.stderr, state))
+GATE = os.path.join(os.path.dirname(LEDGER), "gate.py")
+r = subprocess.run([sys.executable, GATE, "--base", "main"], cwd=old, capture_output=True, text=True, encoding="utf-8")
+check("the gate takes that last-cycle full qa while the head has not moved",
+      re.search(r"Full suite:\s+PASS", r.stdout) and "Traceback" not in r.stderr, r.stdout + r.stderr)
+commit_old("src.txt", "b\n")
+r = subprocess.run([sys.executable, GATE, "--base", "main"], cwd=old, capture_output=True, text=True, encoding="utf-8")
+check("once a commit follows it, the gate asks for the full qa again at the final head",
+      re.search(r"Full suite:\s+FAIL", r.stdout) and "changed after the full qa" in r.stdout, r.stdout + r.stderr)
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
