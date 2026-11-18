@@ -184,6 +184,7 @@ Sessão de hub: o `session_id` do payload está em `sessoes` do `hub.json` achad
 - **AC-T5-4** Dada uma sessão cujo `session_id` está em `sessoes` mas não é o `dono`, `hub.py delegate`, `add`, `set`, `remove` e `init` são negados com "another hub session took over"; `hub.py status` passa. Para o `dono`, todos passam.
 - **AC-T5-5** Dada uma sessão de projeto (`session_id` fora de `sessoes`) com `cwd` numa subpasta da raiz do hub, `git commit`, `git merge` e `ledger.py note` passam como hoje.
 - **AC-T5-6** Dado um payload sem `session_id`, ou um `hub.json` inválido, nada desta tarefa é negado.
+- **AC-T5-7** (decisão do dono, VALIDAR da T8) Em qualquer sessão, de hub ou não, `git -C <pasta> merge|push` e `cd <caminho absoluto> && git merge|push` são lidos contra o repositório de `<pasta>`: chegando à principal dele, `ask` no supervisionado ou sem ledger e `deny` no autônomo sem gate, como se o comando rodasse lá.
 
 - [ ] **Passo 1:** escrever os testes com o `run(...)` que o arquivo já tem, acrescentando o parâmetro `session` ao payload.
 - [ ] **Passo 2:** rodar. Esperado: falham os AC-T5.
@@ -276,7 +277,7 @@ Tomadas em nome do dono nesta spec; ele confirma na aprovação do plano:
 
 ## VALIDAR (noite de 17 para 18/11, modo autônomo)
 
-Decisões tomadas em nome do dono, com a opção recomendada; ele confirma ou desfaz de manhã.
+Decisões tomadas em nome do dono, com a opção recomendada. **Confirmadas pelo dono:** as cinco seguem a recomendação, o plano está aprovado (✋ 1) e a T5 ganha o AC-T5-7.
 
 - **T8, achados anteriores à mudança (revisão do Fable):** o `bash-guard.py` não pergunta antes de chegar à principal por caminhos que já escapavam antes da T8: `git -C <projeto> merge`/`push` ou `cd <abs> && git push` vindos de outra pasta (o caso do hub), `gh pr --repo o/r merge`, um prefixo como `timeout`, `sudo` ou `nice`, `$(...)`, `gh api` com outra rota (graphql, `/merges`, refs), alias, `curl`, `pull`/`rebase`/`reset` na principal. Recomendado: nada nesta versão; o mais grave (outra pasta, que o hub cria) entra como tarefa do hub junto da T5, e o resto vai ao roadmap em espera, porque o `ask` é uma rede para o descuido, não uma barreira contra quem quer contornar.
 - **T8, falsos positivos baixos:** `gh api .../pulls/12/merge` sem `-X PUT` (só consulta), `gh pr merge --help` e `git merge --continue` perguntam. Recomendado: aceitar; custa um clique.
