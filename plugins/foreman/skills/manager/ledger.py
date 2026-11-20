@@ -48,7 +48,8 @@ A claim is written when the dev is dispatched and freed by the dev's add (or rel
 flight and the gate waits for them, so a manager resuming after a compaction sees which runs it still owes a report.
 claim refuses a task that is in flight or already DONE in the current cycle, so one task never runs twice by mistake,
 and one whose Touches: line in the plan meets the Touches: of a task in flight (overlapping as in the preparation
-below), naming each collision, so two tasks never change the same file at once; with no plan or no Touches: on either
+below), naming each collision, so two tasks never change the same file at once (its Isolates: line, what it keeps
+apart, is never read); with no plan or no Touches: on either
 side (a fix-N task, or a Touches: only an Errata line changes), nothing says they collide and the claim passes.
 status lists each copy left over, pending (step leftover, with its action) until it is gone, so the gate waits: a
 worktree under ../_temp/<project>-worktrees/ (project being the main worktree's folder) or .claude/worktrees/ with no

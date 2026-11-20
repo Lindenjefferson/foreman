@@ -2863,6 +2863,14 @@ check("a module doc still collides with nothing else, and other files still coll
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]) == ["src/a.kt (T1 touches src/a.kt)"],
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]))
 
+# What a task keeps apart goes in Isolates:, which the claim does not read: the same note in two tasks is no collision
+isolated = ("### T1\n- Touches: `src/a.kt`\n- Isolates: Pilha: cópia própria. Sem banco.\n"
+            "### T2\n- Touches: `src/b.kt`\n- Isolates: Pilha: cópia própria. Sem banco.\n")
+mine = ledger_module.touch_items(ledger_module.plan_field(isolated, "T2", "Touches"))
+crossed = ledger_module.crossings(mine, isolated, ["T1"])
+check("an Isolates: line shared by two tasks is no collision: only Touches: is read", mine == ["src/b.kt"]
+      and crossed == [], (mine, crossed))
+
 # The newcomer's reading goes in the ledger; a delivery runs its full suite once, after what changes its head
 one = os.path.join(repo, "one-cycle")
 os.makedirs(one)
