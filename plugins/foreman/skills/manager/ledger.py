@@ -48,7 +48,8 @@ A claim is written when the dev is dispatched and freed by the dev's add (or rel
 flight and the gate waits for them, so a manager resuming after a compaction sees which runs it still owes a report.
 claim refuses a task that is in flight or already DONE in the current cycle, so one task never runs twice by mistake,
 and one whose Touches: line in the plan meets the Touches: of a task in flight (overlapping as in the preparation
-below), naming each collision, so two tasks never change the same file at once; with no plan or no Touches: on either
+below), naming each collision, so two tasks never change the same file at once (its Isolates: line, what it keeps
+apart, is never read); with no plan or no Touches: on either
 side (a fix-N task, or a Touches: only an Errata line changes), nothing says they collide and the claim passes.
 status lists each copy left over, pending (step leftover, with its action) until it is gone, so the gate waits: a
 worktree under ../_temp/<project>-worktrees/ (project being the main worktree's folder) or .claude/worktrees/ with no
@@ -82,8 +83,11 @@ full qa found, of the flows that failed and those the fix touches (refused with 
 full_qa_blockers lists anything); status --json gives the latest one after full_qa as after_full_run, which the
 gate's Full suite check reads. add --interface on a qa run marks one that ran the "Verificação de
 interface" command on at least one path. When the CLAUDE.md at the ledger's root gives that line a command (not a
-_(...)_ placeholder), the first cycle closes only once one of its qa runs has --interface or --full: a machine that
-cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
+_(...)_ placeholder), the cycle open when the ledger first sees the line (start records whether the line was
+there; when it was not, the first add that sees it records an interface entry; a ledger whose start has no such key
+counts the line from the start, so for it and for a line there from the start it is cycle 1) closes only once one of its qa runs has --interface or --full: a machine that
+cannot run it is a block to make ready, not a VALIDAR. A cycle closed before the line appeared is never reopened (with
+none open, the next cycle needs it), and no cycle needs it once a qa ran it.
 
 The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: once the
 plan has no task left (or with no scope), status gives full_qa_blockers, each missing item (the reviewer's PASS
@@ -285,7 +289,9 @@ out, and the list is empty while a task in flight has none. Both are advice, nev
 Status data and plan progress
 -----------------------------
 
-status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
+The text status opens with the next step, the first pending item, in one line, and gives the runs held for a later
+plan cycle and the deferred items with no decision one line per kind, with their count and ids; status --json keeps
+each one in pending. status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
 worktree, origin, tip, head_moved} per task in flight; paused: {text, at} or null; full_qa: the latest qa run added
 with --full, or null; after_full_run: the latest qa run added with --after-full after it, or null; after_full_qa:
 the files changed since its head (docs/ aside), or null, and the text says the gate's Full suite will ask for a qa
@@ -428,7 +434,7 @@ REVIEW_ROUNDS = 3
 REVIEWS = ("spec", "plan", "security")
 PARTIAL_REPORT_MINUTES = 90
 INTERFACE_LINE = re.compile(r"^- Verifica[çc][ãa]o de interface[^:\n]*:[ \t]*(.*)$", re.MULTILINE | re.IGNORECASE)
-# Set by main from the project's CLAUDE.md: the first cycle closes only once a qa ran the interface.
+# Set by main from the project's CLAUDE.md: the cycle open when the line appears closes only once a qa ran it.
 NEEDS_INTERFACE = False
 QUALITY_REPORTS = "docs/quality-reports"
 MOVED = re.compile(r"- D\d+ (.*?) -> (moved to .*)", re.IGNORECASE)
@@ -643,9 +649,23 @@ def interface_line(ledger):
     return bool(value) and not value.startswith("_(")
 
 
-def first(groups):
-    """The interface a cycle needs: only the first one, and only when the project has the line."""
-    return NEEDS_INTERFACE and len(groups) == 1
+def first(entries, groups):
+    """The interface the last of groups needs: when the project has the line, only the cycle open when the ledger
+    first saw it (its interface entry, else now), and none once a qa ran it; a cycle closed before stays closed."""
+    if not NEEDS_INTERFACE:
+        return False
+    opening = entries[0] if entries and entries[0]["type"] == "start" else {}
+    # an older ledger, or one started with the line, counts it from the start
+    marks = [0] if opening.get("interface", True) else [
+        index for index, entry in enumerate(entries) if entry["type"] == "interface"]
+    position = {id(entry): index for index, entry in enumerate(entries)}
+
+    def closed(group):
+        before = [entry for entry in group if position[id(entry)] < (marks or [len(entries)])[0]]
+        return bool(before) and cycle_state(before)[1] == []
+    return (not any(entry["agent"] == "qa" and (entry.get("interface") or entry.get("full"))
+                    for group in groups[:-1] for entry in group)
+            and all(closed(group) for group in groups[:-1]) and not closed(groups[-1]))
 
 
 def cycles(entries):
@@ -661,11 +681,11 @@ def cycles(entries):
             groups.append(current)
             current, closed = [], False
         current.append(entry)
-        closed = cycle_state(current, interface=NEEDS_INTERFACE and not groups)[1] == []
+        closed = cycle_state(current, interface=first(entries, groups + [current]))[1] == []
         if closed and waiting:
             groups.append(current)
             current, waiting = waiting, []
-            closed = cycle_state(current)[1] == []
+            closed = cycle_state(current, interface=first(entries, groups + [current]))[1] == []
     groups.append(current)
     return groups
 
@@ -731,7 +751,7 @@ def cycle_state(cycle, autonomous=False, extended=None, interface=False):
     elif last_qa < needs_qa:
         need("qa has not re-run the scenarios the fix touched", "qa", rerun=True)
     elif interface and not any(entry.get("interface") or entry.get("full") for entry in checks):
-        need("cycle 1 closes only once a qa ran the interface (Verificação de interface) on at least one path: open, "
+        need("this cycle closes only once a qa ran the interface (Verificação de interface) on at least one path: open, "
              "sign in, a screen with data; add it with --interface. A machine that cannot run it is a block, never a "
              "VALIDAR: make it ready (Preparar uma máquina) first", "qa", interface=True)
     rounds = 1 if extended is None else 0
@@ -867,7 +887,7 @@ def start(args):
             print(f"{args.slug} prepares in the worktree {tree['worktree']}: no leftover of this delivery")
             return
         write(target, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan, "next": True,
-                       **tree})
+                       "interface": NEEDS_INTERFACE, **tree})
         print(f"preparing {args.slug} in {target}: pass --ledger {target} to its spec and plan rounds (add, measure, "
               f"note, defer); its code starts once this delivery reaches the gate, with start --slug {args.slug} "
               "--archive")
@@ -894,7 +914,8 @@ def start(args):
         os.remove(prepared)
         print(f"promoted {args.slug} from {prepared} at {base[:12]}, its preparation kept")
     else:
-        write(args.ledger, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan})
+        write(args.ledger, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan,
+                         "interface": NEEDS_INTERFACE})
         print(f"started {args.slug} at {base[:12]}")
     report, moved = carried(args.ledger)
     passed, offset, first = [], len(deferred(read(args.ledger))), {}
@@ -1165,7 +1186,7 @@ def add(args):
     if args.agent == "dev" and not FOLLOW_UP.fullmatch(args.task):
         groups = cycles(entries)
         cycle = groups[-1]
-        later = later_cycle(entries, cycle, args.task) if cycle_state(cycle, interface=first(groups))[1] else None
+        later = later_cycle(entries, cycle, args.task) if cycle_state(cycle, interface=first(entries, groups))[1] else None
     entry = {"type": "run", "agent": args.agent, "task": args.task, "verdict": args.verdict, "open": blocking,
              "critical": args.critical, "important": args.important, "minor": args.minor,
              "origin": tally("--origin", ORIGINS, args.origin, blocking + args.minor),
@@ -1203,6 +1224,9 @@ def add(args):
     windows = usage_windows(args.ledger)[0]
     if windows:
         entry["usage"] = {name: item["percent"] for name, item in windows.items()}
+    if NEEDS_INTERFACE and entries[0].get("interface") is False and not any(
+            item["type"] == "interface" for item in entries):
+        write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
     write(args.ledger, entry)
     label = f"{args.agent}{' ' + args.task if args.task else ''}: {args.verdict}"
     print(f"{label} (round {len(review_loop(read(args.ledger), args.task))})" if is_review(entry)
@@ -1576,7 +1600,7 @@ def claim(args):
     if crossed:
         sys.exit(f"{args.task} collides with a task in flight: {'; '.join(crossed)}; it waits for that task's add")
     groups = cycles(entries)
-    done = cycle_state(groups[-1], interface=first(groups))[0]["tasks"].get(args.task)
+    done = cycle_state(groups[-1], interface=first(entries, groups))[0]["tasks"].get(args.task)
     if done and done["verdict"] in DONE:
         sys.exit(f"{args.task} is already done in cycle {len(groups)}: use a new task id (fix-N for a fix round)")
     where = {}
@@ -1793,7 +1817,7 @@ def extend(args):
     else:
         groups = cycles(entries)
         cycle = groups[-1]
-        state = cycle_state(cycle, autonomous(entries), extension(entries, cycle), first(groups))[0]
+        state = cycle_state(cycle, autonomous(entries), extension(entries, cycle), first(entries, groups))[0]
         if not any(step["step"] in ("stop", "ask") for step in state["steps"]):
             sys.exit("the cycle has not run out of fix rounds: nothing to extend")
         text = f"extra fix round: {args.reason}"
@@ -2234,7 +2258,7 @@ def status(args):
         entries = read(args.ledger)
     groups = cycles(entries)
     auto = autonomous(entries)
-    state, pending = cycle_state(groups[-1], auto, extension(entries, groups[-1]), first(groups))
+    state, pending = cycle_state(groups[-1], auto, extension(entries, groups[-1]), first(entries, groups))
     closed = not pending
     items = deferred(entries)
     held = in_flight(entries)
@@ -2258,10 +2282,12 @@ def status(args):
                        f"--task {task}{since}" if later else
                        f"dev {task} dispatched at {at}, no report yet (add it as soon as it reports, or "
                        f"release --task {task}){since}")
-    pending += [f"dev {entry['task']} {entry['verdict']} held for plan cycle {entry['after']}: integrate it once this "
-                "cycle closes, and the next cycle starts from the head that closes it" for entry in held_runs(entries)]
-    pending += [f"deferred {item['id']} has no decision: {item['text']}" + advice(item)
-                for item in items if not item["decision"]]
+    kept_back = held_runs(entries)
+    undecided = [item for item in items if not item["decision"]]
+    grouped = [f"dev {entry['task']} {entry['verdict']} held for plan cycle {entry['after']}: integrate it once this "
+               "cycle closes, and the next cycle starts from the head that closes it" for entry in kept_back]
+    grouped += [f"deferred {item['id']} has no decision: {item['text']}" + advice(item) for item in undecided]
+    pending += grouped
     steps += [step for _, step in kept] + [{"step": "decide", "id": item["id"], "text": item["text"],
                                             **advice_of(item)} for item in items if not item["decision"]]
     marks = [entry["reason"] for entry in entries if entry["type"] == "sensitive"]
@@ -2333,6 +2359,7 @@ def status(args):
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
+        print(f"next step: {pending[0]}" if pending else "next step: the gate")
         print(f"delivery {report['slug']} (base {str(report['base'])[:12]}), cycle {report['cycle']}"
               + (f" from {report['from'][:12]}" if report["from"] else ""))
         if auto:
@@ -2389,7 +2416,15 @@ def status(args):
                   "them: dispatch them now, as capacity allows; when a setting holds them (the limit of heavy copies), "
                   "tell the user, with your recommendation")
         for item in pending:
-            print(f"pending: {item}")
+            if item not in grouped:
+                print(f"pending: {item}")
+        if kept_back:
+            print(f"held ({len(kept_back)}): " + ", ".join(f"{entry['task']} (plan cycle {entry['after']})"
+                                                          for entry in kept_back)
+                  + ": integrate each once this cycle closes, and the next cycle starts from the head that closes it")
+        if undecided:
+            print(f"deferred with no decision ({len(undecided)}): {', '.join(item['id'] for item in undecided)}: "
+                  "resolve each before the gate (status --json gives their texts and recommendations)")
         for item in upcoming:
             print(f"next: {item['slug']} in {item['ledger']}: " + ("; ".join(item["pending"]) or "no review pending")
                   + f"; once this delivery reaches the gate, start --slug {item['slug']} --archive promotes it")

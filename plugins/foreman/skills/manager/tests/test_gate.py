@@ -1073,6 +1073,15 @@ check("Docs FAILs when the README image is no file of the repository", verdict9 
 commit("docs/tela.png", "png\n", "docs: the capture")
 verdict9, detail9 = docs_of(gate("--base", "main").stdout)
 check("Docs passes with the README image tracked", verdict9 == "PASS", detail9)
+commit("docs/02-extra.md", "# Módulo 2\n", "docs: module doc outside docs/modulos/")
+r = gate("--docs")
+check("--docs runs only the Docs check against the tree, with no ledger nor command, and exits 1 on what would fail",
+      r.returncode == 1 and "docs/02-extra.md" in r.stdout and "running" not in r.stdout and "Ledger" not in r.stdout,
+      r.stdout + r.stderr)
+sh("git", "rm", "-q", "docs/02-extra.md")
+sh("git", "commit", "-q", "--no-verify", "-m", "docs: back")
+r = gate("--docs")
+check("--docs exits 0 when the docs pass", r.returncode == 0 and "Docs: PASS" in r.stdout, r.stdout + r.stderr)
 commit("VERSION", "1.1.0\n", "chore: version 1.1.0")
 r = gate("--base", "main")
 check("Version FAILs on a minor with no entry for it in docs/novidades.md",

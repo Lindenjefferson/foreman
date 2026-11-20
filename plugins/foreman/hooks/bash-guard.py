@@ -3,7 +3,7 @@
 anything that reaches the default branch while the delivery is in autonomous mode, a relative cd before a git step
 that lands work, a git checkout or restore that overwrites work not committed, a project command inside timeout,
 the project's dev server outside background mode, and what a foreman hub session may not do (approve, integrate,
-run kickoff); asks the user before a delivery starts outside Claude Code's auto permission mode (not the delivery's
+run kickoff), and gh text published with one of the owner's terms; asks the user before a delivery starts outside Claude Code's auto permission mode (not the delivery's
 autonomous mode).
 
 With a ledger (any mode), denied in the foreground or background: a relative change of directory (cd, pushd,
@@ -19,6 +19,15 @@ With a ledger (any mode), also denied in the foreground or background: a git che
 latest rooted cd before it: the work in those files is lost with no way back (a dev undid uncommitted work this way
 twice in one delivery, against a lesson no project test can check). Passing: a branch change, restore --staged
 alone, --ours, --theirs, -p, a file with no change.
+
+In any repository, with or without a ledger: a gh pr, gh issue or gh release command whose title, body or notes
+(--title, --body, --notes and their short forms, or the file --body-file or --notes-file names), or a gh api whose
+body or title field (-f, -F, --field, --raw-field, or the --input file), holds one of the owner's terms or a home path,
+or a file it names that cannot be read, by the rules of pre-commit-secret-scan.py (a value the shell builds, stdin
+or a file the same command writes is read from the whole command, the file paths taken out; the gh options above, a
+short option glued to its value and -R before the subcommand are read): that text reaches the host directly, where no commit scan reads it, and a
+comment's edit history stays public (a pull request comment named a project's flows once). A file the same command
+writes is read from the command. The reason never prints the term.
 
 A ledger.py start (also start --next), run in a session whose permission_mode is neither auto nor
 bypassPermissions, asks the user first, naming the mode: the delivery would stop at each permission prompt while the
@@ -952,6 +961,93 @@ def discards_work(command, cwd, powershell=False):
     return False
 
 
+GH_TEXT = {"--body", "-b", "--title", "-t", "--notes", "-n", "--subject"}
+GH_FILE = {"--body-file", "-F", "--notes-file"}
+GH_FIELD = {"-f", "-F", "--field", "--raw-field"}
+GH_KEYS = {"body", "title", "query", "name", "description", "message"}
+GH_SHORT = {flag for flag in GH_TEXT | GH_FILE | GH_FIELD if not flag.startswith("--")}
+
+
+def local_path(path, cwd):
+    match = re.fullmatch(r"/([a-zA-Z])(/.*)?", path)  # a Git Bash path such as /c/Users/...
+    if os.name == "nt" and match:
+        path = match.group(1) + ":" + (match.group(2) or "/")
+    return os.path.join(cwd, os.path.expanduser(path))
+
+
+def published_text(command, cwd, powershell=False):
+    """The text a gh command publishes on the host (the title, body, notes or subject of a pull request, issue,
+    comment, release or merge, and the body, title, query, name, description or message fields of gh api), each file
+    it names read, and the files it names but nobody can read. A value the shell builds (a $( ) or heredoc, a
+    variable, a PowerShell here-string or expression, stdin) or a file the same command writes is read from the whole
+    command, with those file paths taken out."""
+    texts, paths, unreadable, whole = [], [], [], False
+    for program, arguments, _ in simple_commands(command, powershell):
+        if program != "gh":
+            continue
+        while arguments and arguments[0].startswith("-"):  # gh -R owner/repo pr ...
+            arguments = arguments[2 if arguments[0] in ("-R", "--repo") else 1:]
+        api = bool(arguments) and arguments[0] == "api"
+        if not api and (not arguments or arguments[0] not in ("pr", "issue", "release") or len(arguments) < 2):
+            continue
+        for index, word in enumerate(arguments):
+            if word.startswith("--"):
+                flag, _, inline = word.partition("=")
+            elif len(word) > 2 and word[:2] in GH_SHORT:
+                flag, inline = word[:2], word[2:]
+            else:
+                flag, inline = word, ""
+            value = inline or (arguments[index + 1] if index + 1 < len(arguments) else "")
+            name = None
+            if api and flag in GH_FIELD:
+                key, _, field = value.partition("=")
+                if key not in GH_KEYS:
+                    continue
+                if flag == "-F" and field.startswith("@"):
+                    name = field[1:]
+                else:
+                    value = field
+            elif api and flag == "--input" or not api and flag in GH_FILE:
+                name = value
+            elif api or flag not in GH_TEXT:
+                continue
+            if name is None:
+                if not value or re.search(r"[$`]", value) or value.startswith(("@'", '@"', "(")):
+                    whole = True
+                else:
+                    texts.append(value)
+            elif name == "-":
+                whole = True
+            else:
+                try:
+                    texts.append(open(local_path(name, cwd), encoding="utf-8", errors="replace").read())
+                except OSError:
+                    if command.count(name) > 1:  # the same command writes it
+                        whole = True
+                        paths.append(name)
+                    else:
+                        unreadable.append(name)
+    if whole:
+        rest = command
+        for name in paths:
+            rest = rest.replace(name, "")
+        texts.append(rest)
+    return [text for text in texts if text], unreadable
+
+
+def owner_hit(texts, cwd):
+    """Whether a text holds one of the owner's terms or a home path, by the pre-commit scanner's own rules."""
+    if not texts:
+        return False
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "foreman_scan", os.path.join(os.path.dirname(os.path.abspath(__file__)), "pre-commit-secret-scan.py"))
+    scan = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scan)
+    owner = scan.Owner(cwd)
+    return any(owner.term_in(text) or any(scan.home_path(line) for line in text.splitlines()) for text in texts)
+
+
 def main():
     payload = json.load(sys.stdin)
     if payload.get("tool_name") not in ("Bash", "PowerShell"):
@@ -975,6 +1071,10 @@ def main():
                                               "each permission prompt while the user is away. Start it anyway, or "
                                               "restart the session in auto mode first?")}}, sys.stdout)
         return
+    try:  # a parse that fails never switches off the rest of the guard
+        published = published_text(command, cwd, powershell)
+    except Exception:
+        published = ([], [])
     skips = skips_hook(command, powershell)
     aliased = not skips and sets_alias(command, powershell)
     publishes = None if skips or hub_reason or aliased else reaches_main(command, cwd, powershell)
@@ -987,6 +1087,15 @@ def main():
         reason = ("This skips the secret-scan pre-commit hook (--no-verify, -n or a core.hooksPath override), and a "
                   "secret committed stays in the history. Commit without it; if the hook blocks, fix what it reports "
                   "(a false positive is allowlisted by the user, as its message explains).")
+    elif published[1]:
+        reason = ("This publishes the text of a file nobody can read from here (" + ", ".join(published[1]) + "), so "
+                  "the owner's terms cannot be checked before it reaches the host. Name the file by a path from this "
+                  "folder, or write it in the same command.")
+    elif owner_hit(published[0], cwd):
+        reason = ("This publishes text on the host (a pull request, issue, comment or release title or body) with one "
+                  "of the owner's terms or a home path, and the commit scan never sees it. Reword it generically (a "
+                  "project of the author, the role instead of the name, no internal names) and publish again; the "
+                  "term is not printed here.")
     elif publishes == "deny":
         reason = ("The delivery is in autonomous mode (the ledger says so), and nothing reaches the default branch "
                   "without the user: no push to it, no merge into it, no pull request merge. Leave the merge and the "

@@ -1,4 +1,4 @@
-import os, re, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile
 
 HOOK = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pre-commit-secret-scan.py")
 os.environ["CLAUDE_FOREMAN_HOME"] = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -146,6 +146,67 @@ with open(TERMS, "w", encoding="utf-8") as handle:
 r = sh(sys.executable, HOOK, "--range", "main..HEAD", check=False)
 check("with no autor line, any author passes and the message term still counts",
       "author" not in r.stdout and "message" in r.stdout, r.stdout)
+
+
+# bash-guard: the text a gh command publishes (title, body, comment, notes) is held to the same terms list
+GUARD = os.path.join(os.path.dirname(HOOK), "bash-guard.py")
+with open(TERMS, "w", encoding="utf-8") as handle:
+    handle.write(NAME + chr(10))
+
+
+def published(command, tool="Bash"):
+    payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": repo, "tool_input": {"command": command}}
+    done = subprocess.run([sys.executable, GUARD], cwd=repo, input=json.dumps(payload), capture_output=True,
+                          text=True, encoding="utf-8")
+    out = json.loads(done.stdout)["hookSpecificOutput"] if done.stdout.strip() else {}
+    return out.get("permissionDecision"), out.get("permissionDecisionReason") or ""
+
+
+decision, why = published(f'gh pr create --title "x" --body "measured in {NAME.lower()} last night"')
+check("gh pr create with an owner term in --body is denied, without printing the term",
+      decision == "deny" and NAME.lower() not in why.lower() and "publish" in why, why)
+decision, _ = published(f"gh pr comment 3 -b 'see {NAME}'")
+check("gh pr comment -b with a term is denied", decision == "deny")
+decision, _ = published(f"gh issue create -t 'bug from {NAME}' -b ok")
+check("gh issue create with a term in the title is denied", decision == "deny")
+decision, _ = published(f"gh api -X PATCH repos/o/r/issues/comments/1 -f body='{NAME} numbers'")
+check("gh api with a term in a body field is denied", decision == "deny")
+write("pr.md", f"Numbers from {NAME}." + chr(10))
+decision, _ = published("gh pr create --title x --body-file pr.md")
+check("a term inside the --body-file is denied", decision == "deny")
+decision, _ = published(chr(10).join(["cat > new.md <<'X'", f"by {NAME}", "X",
+                                      "gh pr create --title x --body-file new.md"]))
+check("a body file written in the same command is read from the command", decision == "deny")
+decision, _ = published("gh pr comment 3 --body 'see " + "C:" + chr(92) + "Users" + chr(92) + "zeb" "ulon" + chr(92)
+                        + "x'")
+check("a home path in a published body is denied", decision == "deny")
+decision, _ = published("gh pr create --title 'qa enxuto' --body 'um projeto do autor: 1 h 40 min'")
+check("a clean body publishes", decision is None)
+decision, _ = published(f"gh pr view 3 -R {NAME.lower()}/repo")
+check("a term outside the published text (a read, the repo flag) passes", decision is None)
+decision, _ = published(f"echo {NAME}")
+check("a command that publishes nothing is not this check's", decision is None)
+NL = chr(10)
+decision, _ = published('gh pr create --title T --body "$(cat <<' + "'EOF'" + NL + f"by {NAME}" + NL + 'EOF' + NL + ')"')
+check("a body from a heredoc inside $( ) is read from the command", decision == "deny")
+decision, _ = published(f"gh pr comment 5 --body @'{NL}by {NAME}{NL}'@", tool="PowerShell")
+check("a PowerShell here-string body is read from the command", decision == "deny")
+decision, _ = published(f'gh pr comment 5 -b"by {NAME}"')
+check("a short flag glued to its value is read", decision == "deny")
+decision, _ = published(f"gh -R o/r pr comment 5 --body 'by {NAME}'")
+check("a repo flag before the subcommand does not hide it", decision == "deny")
+decision, _ = published("gh pr merge 5 --subject 'by " + NAME + "'")
+check("a merge subject is published text", decision == "deny")
+write("unix.md", f"by {NAME}" + NL)
+decision, _ = published("gh pr create --title x --body-file " + "/" + repo[0].lower() + repo[2:].replace(chr(92), "/")
+                        + "/unix.md")
+check("a body file named by a Git Bash path is read", decision == "deny")
+decision, why = published("gh pr create --title x --body-file nowhere/never.md")
+check("a body file that cannot be read and that the command does not write is denied, saying so",
+      decision == "deny" and "read" in why, why)
+home_file = "C:" + chr(92) + "Users" + chr(92) + "zeb" "ulon" + chr(92) + "AppData" + chr(92) + "b.md"
+decision, why = published(f"cat > '{home_file}' <<'X'{NL}clean text{NL}X{NL}gh pr create --title x --body-file '{home_file}'")
+check("the path of a body file the command writes is not read as the published text", decision is None, why)
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

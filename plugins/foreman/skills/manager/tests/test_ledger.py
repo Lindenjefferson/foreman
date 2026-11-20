@@ -153,20 +153,20 @@ for agent, verdict, task, count in (("dev", "DONE", "T1", 0), ("reviewer", "FAIL
 check("no qa yet in the cycle: qa still runs on the cycle's tasks",
       status(FIRST)["pending"] == ["qa has not run on the cycle's tasks"], status(FIRST)["pending"])
 
-ORDER = ".superpowers/order.jsonl"
-run("start", "--slug", "order", ledger=ORDER)
+PAUSED = ".superpowers/paused-order.jsonl"
+run("start", "--slug", "paused-order", ledger=PAUSED)
 for agent, verdict, task in (("dev", "DONE", "T1"), ("qa", "PASS", None), ("reviewer", "PASS", None)):
-    add(agent, verdict, task, ledger=ORDER)
-check("qa may finish before the reviewer", status(ORDER)["ready_for_gate"] is True, status(ORDER)["pending"])
+    add(agent, verdict, task, ledger=PAUSED)
+check("qa may finish before the reviewer", status(PAUSED)["ready_for_gate"] is True, status(PAUSED)["pending"])
 for agent, verdict, task, count in (("dev", "DONE", "T2", 0), ("reviewer", "FAIL", None, 1), ("qa", "PASS", None, 0),
                                     ("dev", "DONE", "fix-1", 0), ("reviewer", "PASS", None, 0),
                                     ("qa", "PASS", None, 0), ("dev", "DONE", "fix-2", 0)):
-    add(agent, verdict, task, count, ledger=ORDER)
+    add(agent, verdict, task, count, ledger=PAUSED)
 check("a later fix of Minors only needs the reviewer, not qa",
-      status(ORDER)["pending"] == ["reviewer has not reviewed the latest changes"], status(ORDER)["pending"])
-add("dev", "DONE", "cleanup", ledger=ORDER)
-add("reviewer", "PASS", ledger=ORDER)
-state = status(ORDER)
+      status(PAUSED)["pending"] == ["reviewer has not reviewed the latest changes"], status(PAUSED)["pending"])
+add("dev", "DONE", "cleanup", ledger=PAUSED)
+add("reviewer", "PASS", ledger=PAUSED)
+state = status(PAUSED)
 check("the cleanup task stays in the cycle and needs only the reviewer",
       state["cycle"] == 2 and "cleanup" in state["tasks"] and state["ready_for_gate"] is True, state)
 check("cleanup is not a fix round", state["metrics"]["cycles"][1]["fix_rounds"] == 2, state["metrics"])
@@ -2072,26 +2072,83 @@ check("with the interface line still a placeholder, cycle 1 closes on a qa PASS"
       status(IFACE)["ready_for_gate"] is True, status(IFACE)["pending"])
 iface_line("`npx maestro test e2e/`")
 state = status(IFACE)
-check("with an interface command, cycle 1 does not close until a qa ran it, and says the machine is a block",
-      state["ready_for_gate"] is False and any("interface" in item and "Preparar uma máquina" in item
-                                               for item in state["pending"])
-      and {"step": "qa", "interface": True} in state["steps"], state["pending"])
+check("a line that appears once cycle 1 closed does not reopen it", state["cycle"] == 1
+      and state["ready_for_gate"] is True, state["pending"])
 add("dev", "DONE", "T2", ledger=IFACE)
-check("a dev task added before the interface ran stays in cycle 1", status(IFACE)["cycle"] == 1, status(IFACE)["cycle"])
+add("reviewer", "PASS", ledger=IFACE)
+add("qa", "PASS", ledger=IFACE)
+state = status(IFACE)
+check("the cycle open when the line appears does not close until a qa ran it, and says the machine is a block",
+      state["cycle"] == 2 and state["ready_for_gate"] is False
+      and any("interface" in item and "Preparar uma máquina" in item for item in state["pending"])
+      and {"step": "qa", "interface": True} in state["steps"], state["pending"])
+add("dev", "DONE", "T2b", ledger=IFACE)
+check("a dev task added before the interface ran stays in that cycle", status(IFACE)["cycle"] == 2,
+      status(IFACE)["cycle"])
 r = run("add", "--agent", "reviewer", "--verdict", "PASS", "--interface", ledger=IFACE)
 check("--interface is refused on the reviewer", r.returncode != 0 and "--interface" in r.stderr, r.stderr)
 add("reviewer", "PASS", ledger=IFACE)
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--interface", ledger=IFACE)
 state = status(IFACE)
-check("a qa added with --interface closes cycle 1 and is stored on the run",
+check("a qa added with --interface closes that cycle and is stored on the run",
       r.returncode == 0 and state["ready_for_gate"] is True and state["qa"][0].get("interface") is True,
       (r.stderr, state["pending"]))
 add("dev", "DONE", "T3", ledger=IFACE)
 add("reviewer", "PASS", ledger=IFACE)
 add("qa", "PASS", ledger=IFACE)
 state = status(IFACE)
-check("a later cycle closes on a qa PASS with no interface run", state["cycle"] == 2 and state["ready_for_gate"] is True,
+check("a later cycle closes on a qa PASS with no interface run", state["cycle"] == 3 and state["ready_for_gate"] is True,
       state["pending"])
+# With the line there from the start, cycle 1 needs it; a run of the next plan cycle held meanwhile is no empty cycle
+iface_line("`npx maestro test e2e/`")
+IFACE_START = os.path.join(iface, ".superpowers", "start.jsonl")
+run("start", "--slug", "iface-start", ledger=IFACE_START, cwd=iface)
+add("dev", "DONE", "T1", ledger=IFACE_START)
+add("reviewer", "PASS", ledger=IFACE_START)
+add("qa", "PASS", ledger=IFACE_START)
+check("with the line from the start, cycle 1 does not close until a qa ran the interface",
+      status(IFACE_START)["ready_for_gate"] is False, status(IFACE_START)["pending"])
+IFACE_HELD = os.path.join(iface, ".superpowers", "held.jsonl")
+iface_line("_(comando)_")
+run("start", "--slug", "iface-held", ledger=IFACE_HELD, cwd=iface)
+run("scope", "--cycle", "1", "--tasks", "T1", ledger=IFACE_HELD)
+run("scope", "--cycle", "2", "--tasks", "T11,T12", ledger=IFACE_HELD)
+add("dev", "DONE", "T1", ledger=IFACE_HELD)
+add("dev", "DONE", "T11", ledger=IFACE_HELD)
+add("reviewer", "PASS", ledger=IFACE_HELD)
+add("qa", "PASS", ledger=IFACE_HELD)
+add("dev", "DONE", "T12", ledger=IFACE_HELD)
+add("reviewer", "PASS", ledger=IFACE_HELD)
+add("qa", "PASS", ledger=IFACE_HELD)
+iface_line("`npx maestro test e2e/`")
+state = status(IFACE_HELD)
+check("a line created in cycle 2, once closed, reopens no cycle and holds no run",
+      state["cycle"] == 2 and state["ready_for_gate"] is True and not any("held" in item for item in state["pending"]),
+      (state["cycle"], state["pending"]))
+run("add", "--agent", "qa", "--verdict", "PASS", "--interface", ledger=IFACE_HELD)
+state = status(IFACE_HELD)
+check("a qa of the interface added then opens no cycle with no diff", state["cycle"] == 2
+      and state["ready_for_gate"] is True, (state["cycle"], state["pending"]))
+# a ledger from before the interface mark (its start entry has no interface key) counts the line from the start
+IFACE_OLD = os.path.join(iface, ".superpowers", "old.jsonl")
+run("start", "--slug", "iface-old", ledger=IFACE_OLD, cwd=iface)
+with open(IFACE_OLD, encoding="utf-8") as handle:
+    opening = json.loads(handle.readline())
+check("start records whether the interface line was there", opening.get("interface") is True, opening)
+opening.pop("interface", None)
+with open(IFACE_OLD, "w", encoding="utf-8", newline=chr(10)) as handle:
+    handle.write(json.dumps(opening, ensure_ascii=False) + chr(10))
+add("dev", "DONE", "T1", ledger=IFACE_OLD)
+add("reviewer", "PASS", ledger=IFACE_OLD)
+add("qa", "PASS", ledger=IFACE_OLD)
+check("an older ledger with the line keeps asking cycle 1 for the interface after the update",
+      status(IFACE_OLD)["ready_for_gate"] is False, status(IFACE_OLD)["pending"])
+check("an older ledger gets no interface mark",
+      not any(json.loads(line).get("type") == "interface" for line in open(IFACE_OLD, encoding="utf-8")))
+r = run("add", "--agent", "qa", "--verdict", "MAYBE", ledger=IFACE)
+check("a refused add writes no interface mark",
+      r.returncode != 0 and sum(json.loads(line).get("type") == "interface" for line in open(IFACE, encoding="utf-8"))
+      == 1)
 IFACE_FULL = os.path.join(iface, ".superpowers", "full.jsonl")
 run("start", "--slug", "iface-full", ledger=IFACE_FULL, cwd=iface)
 add("dev", "DONE", "T1", ledger=IFACE_FULL)
@@ -2863,6 +2920,14 @@ check("a module doc still collides with nothing else, and other files still coll
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]) == ["src/a.kt (T1 touches src/a.kt)"],
       ledger_module.crossings(["src/a.kt"], shared, ["T1"]))
 
+# What a task keeps apart goes in Isolates:, which the claim does not read: the same note in two tasks is no collision
+isolated = ("### T1\n- Touches: `src/a.kt`\n- Isolates: Pilha: cópia própria. Sem banco.\n"
+            "### T2\n- Touches: `src/b.kt`\n- Isolates: Pilha: cópia própria. Sem banco.\n")
+mine = ledger_module.touch_items(ledger_module.plan_field(isolated, "T2", "Touches"))
+crossed = ledger_module.crossings(mine, isolated, ["T1"])
+check("an Isolates: line shared by two tasks is no collision: only Touches: is read", mine == ["src/b.kt"]
+      and crossed == [], (mine, crossed))
+
 # The newcomer's reading goes in the ledger; a delivery runs its full suite once, after what changes its head
 one = os.path.join(repo, "one-cycle")
 os.makedirs(one)
@@ -3002,6 +3067,28 @@ commit_old("src.txt", "b\n")
 r = subprocess.run([sys.executable, GATE, "--base", "main"], cwd=old, capture_output=True, text=True, encoding="utf-8")
 check("once a commit follows it, the gate asks for the full qa again at the final head",
       re.search(r"Full suite:\s+FAIL", r.stdout) and "changed after the full qa" in r.stdout, r.stdout + r.stderr)
+
+# The text status opens with the next action, and runs held or items deferred show as one line per type with a count
+PAUSED = ".superpowers/paused-order.jsonl"
+run("start", "--slug", "paused-order", ledger=PAUSED)
+run("scope", "--cycle", "1", "--tasks", "O1", ledger=PAUSED)
+run("scope", "--cycle", "2", "--tasks", "O2,O3", ledger=PAUSED)
+for task in ("O1", "O2", "O3"):
+    add("dev", "DONE", task, ledger=PAUSED)
+for text in ("first item", "second item", "third item"):
+    run("defer", "--text", text, "--recommend", "later", ledger=PAUSED)
+run("pause", "--text", "back tomorrow", ledger=PAUSED)
+lines = run("status", ledger=PAUSED).stdout.splitlines()
+state = status(PAUSED)
+check("the text status opens with the next action in one line",
+      lines and lines[0].startswith("next step: delivery paused") and "back tomorrow" in lines[0], lines[:3])
+check("held runs and deferred items show as one line each, with their count and ids",
+      sum("held" in line for line in lines) == 1 and any("held (2)" in line and "O2" in line and "O3" in line
+                                                         for line in lines)
+      and any("deferred with no decision (3)" in line and "D1" in line and "D3" in line for line in lines)
+      and not any("second item" in line for line in lines), lines)
+check("status --json still lists each pending item", sum("held" in item for item in state["pending"]) == 2
+      and sum(item.startswith("deferred ") for item in state["pending"]) == 3, state["pending"])
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
