@@ -1090,6 +1090,11 @@ FULL = ".superpowers/full.jsonl"
 run("start", "--slug", "full", ledger=FULL)
 add("dev", "DONE", "T1", ledger=FULL)
 check("a ledger with no full qa run has full_qa null", status(FULL)["full_qa"] is None)
+r = run("add", "--agent", "qa", "--verdict", "PASS", "--after-full", ledger=FULL)
+check("--after-full is refused with no full qa before it", r.returncode != 0 and "--full" in r.stderr, r.stderr)
+r = run("add", "--agent", "reviewer", "--verdict", "PASS", "--after-full", ledger=FULL)
+check("--after-full is refused on the reviewer", r.returncode != 0 and "--after-full" in r.stderr, r.stderr)
+check("a ledger with no partial qa has after_full_run null", status(FULL)["after_full_run"] is None)
 r = run("add", "--agent", "reviewer", "--verdict", "PASS", "--full", ledger=FULL)
 check("--full is refused on the reviewer", r.returncode != 0 and "--full" in r.stderr, r.stderr)
 r = run("add", "--agent", "dev", "--task", "T2", "--verdict", "DONE", "--full", ledger=FULL)
@@ -1114,6 +1119,17 @@ state = status(FULL)
 check("full_qa is the latest full qa run across the whole delivery, even from an earlier cycle",
       state["cycle"] > 1 and state["full_qa"]["report"] == SECOND, state["full_qa"])
 check("no commit after the full qa: no warning", status(FULL)["after_full_qa"] is None, status(FULL)["after_full_qa"])
+r = run("add", "--agent", "qa", "--verdict", "PASS", "--full", "--after-full", ledger=FULL)
+check("--full and --after-full together are refused", r.returncode != 0, r.stderr)
+r = run("add", "--agent", "qa", "--verdict", "PASS", "--after-full", ledger=FULL)
+check("--after-full is refused before the reviewer's PASS on the fix", r.returncode != 0 and "reviewer" in r.stderr,
+      r.stderr)
+add("reviewer", "PASS", ledger=FULL)
+r = run("add", "--agent", "qa", "--verdict", "PASS", "--after-full", ledger=FULL)
+state = status(FULL)
+check("--after-full after a full qa is stored and shows as after_full_run, full_qa unchanged",
+      r.returncode == 0 and state["after_full_run"] and state["after_full_run"].get("after_full") is True
+      and state["full_qa"]["report"] == SECOND, (r.stderr, state["after_full_run"]))
 with open(os.path.join(repo, "docs-after.md"), "w", encoding="utf-8", newline="\n") as handle:
     handle.write("a doc fixed after the final qa\n")
 os.makedirs(os.path.join(repo, "docs", "modulos"), exist_ok=True)

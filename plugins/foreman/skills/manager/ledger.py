@@ -11,7 +11,8 @@ Commands
           [--report <path> | --from-agent <agent id>] [--head <rev>] [--seconds <duration>] [--tokens N]
   add     --agent reviewer --task spec|plan|security --verdict PASS|FAIL ...
                                                               one round of the spec, plan or security review loop
-  add     --agent qa ... --full | --interface                 the qa ran the full test command, or the interface
+  add     --agent qa ... --full | --after-full | --interface  the qa ran the full test command, re-ran the fix
+                                                              after it, or ran the interface
   add     --agent newcomer --verdict PASS|FAIL [--report <path> | --from-agent <agent id>]
                                                               the newcomer's reading at closing; it changes no step
   claim   --task <id> [--worktree <path>] [--origin <rev>]
@@ -76,7 +77,10 @@ Full and interface qa runs
 --------------------------
 
 add --full on a qa run marks a run of the full suite (every test line of Comandos and the entire interface suite);
-status --json gives the latest as full_qa. add --interface on a qa run marks one that ran the "Verificação de
+status --json gives the latest as full_qa. add --after-full on a qa run marks the re-run, after a fix of what the
+full qa found, of the flows that failed and those the fix touches (refused with no full qa, with --full, or while
+full_qa_blockers lists anything); status --json gives the latest one after full_qa as after_full_run, which the
+gate's Full suite check reads. add --interface on a qa run marks one that ran the "Verificação de
 interface" command on at least one path. When the CLAUDE.md at the ledger's root gives that line a command (not a
 _(...)_ placeholder), the first cycle closes only once one of its qa runs has --interface or --full: a machine that
 cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
@@ -283,8 +287,9 @@ Status data and plan progress
 
 status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
 worktree, origin, tip, head_moved} per task in flight; paused: {text, at} or null; full_qa: the latest qa run added
-with --full, or null; after_full_qa: the files changed since its head (docs/ aside), or null, and
-the text says the gate's Full suite will ask for the full qa again. from: the commit the current cycle's diff starts
+with --full, or null; after_full_run: the latest qa run added with --after-full after it, or null; after_full_qa:
+the files changed since its head (docs/ aside), or null, and the text says the gate's Full suite will ask for a qa
+re-run over them. from: the commit the current cycle's diff starts
 at, for the reviewer's and qa's range: the base for cycle 1, else the head the run that closed the previous cycle
 recorded (a commit made after it and before this cycle's first task, such as an errata, falls in the range too).
 
@@ -1137,10 +1142,14 @@ def add(args):
                  "and add the run naming the file you saved")
     if args.full and args.agent != "qa":
         sys.exit("--full marks a qa run of the project's full test command")
-    before_full = full_qa_blockers(entries, args.ledger) if args.full else []
+    if args.after_full and (args.agent != "qa" or args.full):
+        sys.exit("--after-full marks a qa re-run after the full qa (never with --full)")
+    if args.after_full and not any(entry["agent"] == "qa" and entry.get("full") for entry in runs(entries)):
+        sys.exit("--after-full re-runs a fix after a qa --full: no qa run was added with --full")
+    before_full = full_qa_blockers(entries, args.ledger) if args.full or args.after_full else []
     if before_full:
-        sys.exit("a delivery runs its full suite once, at its final head: "
-                 + "; ".join(before_full))
+        sys.exit(("a qa re-run after the full qa comes after the fix's review: " if args.after_full else
+                  "a delivery runs its full suite once, at its final head: ") + "; ".join(before_full))
     if args.interface and args.agent != "qa":
         sys.exit("--interface marks a qa run that ran the interface (Verificação de interface)")
     blocking = args.critical + args.important
@@ -1172,6 +1181,8 @@ def add(args):
         entry["head"] = reviewed_head(args) or entry["head"]
     if args.full:
         entry["full"] = True
+    if args.after_full:
+        entry["after_full"] = True
     if args.interface:
         entry["interface"] = True
     if args.seconds is not None:
@@ -1411,12 +1422,13 @@ def tip(entry):
     return git_head(tree=tree) if tree and os.path.isdir(tree) else None
 
 
-def after_full(full, ledger):
-    """The files changed since the latest qa --full's head (docs/ aside), or None with none: the gate's Full suite
-    check asks for the full qa again over them."""
+def after_full(full, ledger, rerun=None):
+    """The files changed since the latest qa --full's head, or since its --after-full re-run's when that PASSed
+    (docs/ aside), or None with none: the gate's Full suite check asks for a qa re-run over them."""
     if not full or not full.get("head"):
         return None
-    result = subprocess.run(["git", "diff", "--name-only", full["head"], "HEAD"], capture_output=True, text=True,
+    since = rerun["head"] if rerun and rerun.get("verdict") == "PASS" and rerun.get("head") else full["head"]
+    result = subprocess.run(["git", "diff", "--no-renames", "--name-only", since, "HEAD"], capture_output=True, text=True,
                             cwd=os.path.dirname(os.path.abspath(ledger)))
     changed = [name for name in result.stdout.splitlines()
                if name and not name.startswith("docs/")] if result.returncode == 0 else []
@@ -2281,7 +2293,11 @@ def status(args):
     windows, unreadable = usage_windows(args.ledger)
     usage = usage_advice(windows, usage_settings(usage_files(args.ledger)[1]), usage_margins(entries))
     plans = [entry["plan"] for entry in entries if entry["type"] == "plan"]
-    full = [entry for entry in runs(entries) if entry["agent"] == "qa" and entry.get("full")]
+    done = runs(entries)
+    last_full = max((index for index, entry in enumerate(done) if entry["agent"] == "qa" and entry.get("full")),
+                    default=None)
+    full = [done[last_full]] if last_full is not None else []
+    rerun = [entry for entry in done[(last_full or 0) + 1:] if entry.get("after_full")] if full else []
     report = {"slug": entries[0].get("slug"), "base": entries[0].get("base"), "ledger": os.path.abspath(args.ledger),
               "plan": plans[-1] if plans else entries[0].get("plan"),
               "cycle": len(groups), "from": cycle_from(entries, groups), "in_flight": list(held), "dispatched": held,
@@ -2290,7 +2306,8 @@ def status(args):
                           "waiting_minutes": waiting(claim), "committed": committed(claim, head),
                           "partial_report": (waiting(claim) or 0) >= PARTIAL_REPORT_MINUTES}
                          for task, claim in claims(entries).items()],
-              "paused": pause_state, "full_qa": full[-1] if full else None, "leftovers": left,
+              "paused": pause_state, "full_qa": full[-1] if full else None,
+              "after_full_run": rerun[-1] if rerun else None, "leftovers": left,
               "tasks": {task: entry["verdict"] for task, entry in state["tasks"].items()},
               "reviewer": state["reviewer"], "qa": state["qa"], "runs": groups[-1], "pending": pending,
               "steps": steps, "scope": progress(entries, closed, held, args.ledger),
@@ -2308,7 +2325,7 @@ def status(args):
         plan_field(text, task, "Touches")) if text else [])
     report["approval"] = standing(args.ledger)
     report["heartbeat"] = heartbeat(entries, auto)
-    report["after_full_qa"] = after_full(report["full_qa"], args.ledger)
+    report["after_full_qa"] = after_full(report["full_qa"], args.ledger, report["after_full_run"])
     left = (report["scope"] or {}).get("tasks_left")  # mid-delivery the list is noise; add --full still checks it
     report["full_qa_blockers"] = [] if left else full_qa_blockers(entries, args.ledger)
     report["gates"] = [{"verdict": entry["verdict"], "failed": entry.get("failed", []), "at": entry.get("at")}
@@ -2352,8 +2369,9 @@ def status(args):
                   f"{report['heartbeat']['since']}): check the heartbeat job with CronList and create it if it is gone")
         if report["after_full_qa"]:
             print(f"after the full qa at {report['full_qa']['head'][:7]}: {', '.join(report['after_full_qa'])} "
-                  "changed, so the gate's Full suite asks for the full qa again: defer a Minor of the final qa "
-                  "instead of fixing it after it")
+                  "changed, so the gate's Full suite asks for a qa re-run over them (--after-full, or the full qa again "
+                  "with no \"Arquivos globais\" line, a merge or a global file changed; gate.py names which): "
+                  "defer a Minor of the final qa instead of fixing it after it")
         shown = [item for item in report["full_qa_blockers"] if not item.startswith("deferred ")]
         if shown:
             print("before the full qa, which the delivery runs once, at its final head: " + "; ".join(shown))
@@ -2690,6 +2708,8 @@ def main():
     command.add_argument("--seconds", help="how long the run took, from its completion notification: 90, 12m, 1h5m or 12m30s")
     command.add_argument("--tokens", type=count, help="the tokens the run used, from its completion notification")
     command.add_argument("--full", action="store_true", help="the qa ran the project's full test command")
+    command.add_argument("--after-full", action="store_true",
+                         help="the qa re-ran, after a fix, the flows the full qa failed and those the fix touches")
     command.add_argument("--interface", action="store_true", help="the qa ran the interface (Verificação de interface)")
     command.set_defaults(run=add)
     for name, run in (("claim", claim), ("release", release)):

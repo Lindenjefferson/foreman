@@ -34,7 +34,10 @@ ledger's latest reviewer run changes anything but the plan, docs/lessons.md, doc
 .foreman-secrets-allow (first-parent commits only, so a merged front is not counted, and tasks are integrated by
 fast-forward or cherry-pick); when "Comandos" has a "Verificação de interface" line and no command the gate runs
 is that line's command, a qa run added with --full whose head differs from HEAD in no file but those
-same exempt files and docs/ (Full suite, by tree, so a merged front counts; the gate runs the Testes line itself); a
+same exempt files and docs/ (Full suite, by tree, so a merged front counts; the gate runs the Testes line itself), or,
+when "Comandos" has an "Arquivos globais" line (globs as in "Arquivos de teste"), a qa run added with --after-full
+that PASSed after it, with no merge commit since the full qa, no file changed since it matching those globs, and no
+file but those exempt changed after the re-run's head; a
 newcomer run in the ledger's current cycle, when the version rises minor or major (or is the first) or <base>..HEAD
 changes README.md or the "Preparar uma máquina" section of CLAUDE.md, and a dev run after it when it FAILed
 (Newcomer); every command of that section passes (lines like
@@ -96,7 +99,8 @@ COMMANDS = {"build": "Build", "typecheck": "Typecheck", "tipos": "Typecheck", "l
 ORDER = ["Build", "Typecheck", "Lint", "Testes", "Auditoria"]
 WORKSPACE = re.compile(r"[\w./\-]*\.superpowers/[\w./\-]+")
 TEST_FILES = "arquivos de teste"
-NOT_COMMANDS = {TEST_FILES, "testes afetados"}
+GLOBAL_FILES = "arquivos globais"
+NOT_COMMANDS = {TEST_FILES, GLOBAL_FILES, "testes afetados"}
 INTERFACE = ("verificação de interface", "verificacao de interface")
 CRITERION_ANY = re.compile(r"(?<![\w-])AC-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*")
 # The placeholder may sit after a piece of the id (AC-05T<task>-<n>): without \w and - in the lookahead the
@@ -707,8 +711,9 @@ def changed_after(ledger, head, tree=False):
     if git("merge-base", "--is-ancestor", head, "HEAD")[0] != 0:
         return None, []
     plan = repo_path(ledger.get("plan") or "")
-    out = (git("diff", "-z", "--name-only", head, "HEAD") if tree else
-           git("log", "--first-parent", "--no-merges", "-z", "--name-only", "--format=", f"{head}..HEAD"))[1]
+    out = (git("diff", "--no-renames", "-z", "--name-only", head, "HEAD") if tree else
+           git("log", "--first-parent", "--no-merges", "--no-renames", "-z", "--name-only", "--format=",
+               f"{head}..HEAD"))[1]
     changed = sorted({name.strip("\n") for name in out.split("\0")} - {"", plan, LESSONS, SECRETS_ALLOW})
     return True, [name for name in changed if not name.startswith(REPORTS + "/")]
 
@@ -723,6 +728,24 @@ def reviewed(ledger):
         return False, f"the reviewed head {head[:7]} is not in this history: run the reviewer on the current head"
     return not changed, (f"changed after the reviewed head {head[:7]} with no review: " + ", ".join(changed)
                          if changed else "")
+
+
+def global_changes(head, changed, globs):
+    """The changed files that every screen inherits: those matching the "Arquivos globais" globs (all of them when a
+    glob is invalid), and CLAUDE.md when its Comandos section changed since <head>, since the globs could narrow."""
+    try:
+        patterns = [glob_regex(pattern) for pattern in globs]
+    except re.error:
+        return changed
+    tracked = tracked_files()
+    for pattern, compiled in zip(globs, patterns):
+        if not any(compiled.fullmatch(path) for path in tracked):
+            warn(f'the "Arquivos globais" glob {pattern} matches no tracked file')
+    wide = [name for name in changed if any(compiled.fullmatch(name) for compiled in patterns)]
+    before = git("show", f"{head}:CLAUDE.md")
+    if "CLAUDE.md" in changed and comandos_section(before[1] if before[0] == 0 else "") != comandos_section(claude_md()):
+        wide.append("CLAUDE.md (Comandos)")
+    return wide
 
 
 def full_suite(ledger, commands):
@@ -743,7 +766,27 @@ def full_suite(ledger, commands):
         return False, (f"the full qa head {head[:7]} is not in this history: "
                        "run qa on the full suite at the current head")
     changed = [name for name in changed if not name.startswith("docs/")]
-    return not changed, (f"changed after the full qa at {head[:7]}: " + ", ".join(changed) if changed else "")
+    if not changed:
+        return True, ""
+    failed = f"changed after the full qa at {head[:7]}: " + ", ".join(changed)
+    globs = next((value.split() for label, value in comandos() if label_key(label) == GLOBAL_FILES), None)
+    if globs is None:
+        return False, failed + ' (the full qa again: a qa re-run stands in for it only with an "Arquivos globais" line)'
+    if git("rev-list", "--merges", f"{head}..HEAD")[1].strip():
+        return False, failed + " (a merge after the full qa asks for the full qa again)"
+    wide = global_changes(head, changed, globs)
+    if wide:
+        return False, failed + " (global files, so the full qa again: " + ", ".join(wide) + ")"
+    rerun = ledger.get("after_full_run") or {}
+    if rerun.get("verdict") != "PASS" or not rerun.get("head"):
+        return False, failed + " (a qa re-run of the fix, added with --after-full)"
+    if git("merge-base", "--is-ancestor", head, rerun["head"])[0] != 0:
+        return False, failed + f" (the qa re-run at {rerun['head'][:7]} is not after the full qa)"
+    found, later = changed_after(ledger, rerun["head"], tree=True)
+    later = [name for name in later if not name.startswith("docs/")] if found else ["(its head is not in history)"]
+    if later:
+        return False, failed + f"; changed after the qa re-run at {rerun['head'][:7]}: " + ", ".join(later)
+    return True, ""
 
 
 def ledger_state(path):

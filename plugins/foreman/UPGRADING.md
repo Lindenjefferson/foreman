@@ -4,6 +4,15 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.13.0 — suíte inteira do `qa` enxuta
+
+PR #(a definir).
+
+- **A execução completa roda o comportamento só nos "Formatos do ciclo"** (melhoria, decisão do dono): num app, o `qa` da suíte inteira rodava 44 fluxos em 2 larguras e 3 modos, 6 passadas de 2 h 10 a 2 h 54 (~15 h), e um `qa` final de 23.757 s terminou em FAIL. Tema e largura mudam a aparência, não o comportamento. Agora a suíte de interface roda inteira nos "Formatos do ciclo" (o caso mais restritivo); os outros formatos, temas e ajustes entram só nas capturas e na gravação do fluxo principal. Pela revisão do Fable: uma entrega com tarefa `Global:` roda a suíte inteira em cada um, um teste cujo critério nomeia formato, tema ou ajuste roda nele, e uma suíte interrompida não entra com `--full`. Número: segundos do `qa --full` por entrega (meta no app: abaixo de 2 h).
+- **Conserto depois do `qa` completo reverificado só no que ele toca** (melhoria, decisão do dono): o passo 6 repetia a execução completa depois de cada Critical ou Important, o que dobrava o custo. Com a linha opcional "Arquivos globais" no "Comandos", depois do PASS do `reviewer` sobre o conserto (que nomeia os fluxos tocados) o `qa` roda os fluxos que falharam e esses, nos formatos onde falharam, e entra com `add --after-full`, recusado sem um `--full` antes ou com `full_qa_blockers`. O `full_suite` do `gate.py` aceita o `--full` mais o último `--after-full` em PASS quando nada mudou depois dele, nenhum arquivo dos globs mudou desde o `--full` (rename conta pelos dois nomes, e mudar o "Comandos" conta como global, para a linha não se estreitar no meio), não entrou merge, e avisa o glob que não casa nenhum arquivo; sem a linha, como antes. O `status` mede o que mudou a partir da última reexecução em PASS. O intervalo é sempre o do `--full` até o head (cumulativo, revisão do Fable). Número: segundos de `qa` depois do primeiro `--full` por entrega.
+
+**Ao atualizar:** nada quebra; ledgers antigos seguem legíveis. Para ganhar a reexecução parcial, acrescente ao "Comandos" do `CLAUDE.md` de cada projeto com tela a linha "Arquivos globais" com os globs do que toda tela herda (tema, navegação, configuração); sem ela, o gate segue pedindo a execução completa de novo. Confira que "Formatos do ciclo" nomeia o caso mais restritivo (a menor tela) e que "Formatos de tela" lista os temas e ajustes que as capturas cobrem.
+
 ## 1.12.0 — hub: uma sessão que delega a vários projetos
 
 PR #16.

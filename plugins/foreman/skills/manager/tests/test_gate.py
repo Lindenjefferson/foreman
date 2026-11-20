@@ -678,6 +678,58 @@ check("Full suite FAILs when a code file changed after the full qa, naming it",
       r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "changed after the full qa at" in r.stdout
       and "late.txt" in r.stdout, r.stdout)
 
+added = ledger_cmd("add", "--agent", "qa", "--verdict", "PASS", "--after-full")
+r = gate("--base", "main")
+check("without an Arquivos globais line, a partial qa never stands in for the full qa",
+      added.returncode == 0 and r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout)
+      and "late.txt" in r.stdout and '"Arquivos globais" line' in r.stdout, r.stdout)
+commit("CLAUDE.md", FULL + UI + "- Arquivos globais: `tema/*`\n", "docs: global files line")
+ledger_cmd("add", "--agent", "dev", "--task", "fix-4", "--verdict", "DONE")
+ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
+r = ledger_cmd("add", "--agent", "qa", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1", "--full")
+check("a FAILed full qa is added", r.returncode == 0, r.stderr)
+commit("tela.txt", "fixed\n", "fix: a screen after the full qa")
+ledger_cmd("add", "--agent", "dev", "--task", "fix-5", "--verdict", "DONE")
+ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
+r = gate("--base", "main")
+check("Arquivos globais is no gate command", "running Arquivos globais" not in r.stdout
+      and "Arquivos globais\" is not run" not in r.stdout, r.stdout)
+check("a fix after the full qa with no partial qa still FAILs Full suite",
+      r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "tela.txt" in r.stdout, r.stdout)
+ledger_cmd("add", "--agent", "qa", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1", "--after-full")
+r = gate("--base", "main")
+check("a FAILed partial qa does not stand in for the full qa",
+      r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout), r.stdout)
+ledger_cmd("add", "--agent", "qa", "--verdict", "PASS", "--after-full")
+r = gate("--base", "main")
+check("a partial qa PASS at the head after the full qa PASSes Full suite when no global file changed",
+      re.search(r"Full suite:\s+PASS", r.stdout), r.stdout)
+state = json.loads(ledger_cmd("status", "--json").stdout)
+check("after a partial qa PASS at the head, status no longer asks for a re-run", state["after_full_qa"] is None,
+      state["after_full_qa"])
+commit("tela2.txt", "late\n", "fix: another screen")
+ledger_cmd("add", "--agent", "dev", "--task", "fix-6", "--verdict", "DONE")
+ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
+r = gate("--base", "main")
+check("a commit after the partial qa FAILs Full suite again",
+      r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "tela2.txt" in r.stdout, r.stdout)
+os.makedirs(os.path.join(repo, "tema"), exist_ok=True)
+commit("tema/cores.txt", "dark\n", "fix: a global token")
+ledger_cmd("add", "--agent", "dev", "--task", "fix-7", "--verdict", "DONE")
+ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
+ledger_cmd("add", "--agent", "qa", "--verdict", "PASS", "--after-full")
+r = gate("--base", "main")
+check("a global file changed since the full qa asks for the full qa again, naming it",
+      r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "tema/cores.txt" in r.stdout, r.stdout)
+commit("CLAUDE.md", FULL + UI + "- Arquivos globais: `nada/*`\n", "docs: narrow the global files")
+ledger_cmd("add", "--agent", "dev", "--task", "fix-8", "--verdict", "DONE")
+ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
+ledger_cmd("add", "--agent", "qa", "--verdict", "PASS", "--after-full")
+r = gate("--base", "main")
+check("narrowing the Arquivos globais line after the full qa still asks for the full qa again",
+      r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "CLAUDE.md (Comandos)" in r.stdout
+      and 'glob nada/* matches no tracked file' in r.stdout, r.stdout)
+
 ledger_cmd("add", "--agent", "qa", "--verdict", "PASS", "--full")
 full_head = sh("git", "rev-parse", "HEAD").strip()
 sh("git", "switch", "-q", "-c", "front")
@@ -689,6 +741,10 @@ check("Full suite FAILs after a --no-ff merged front changed a code file since t
       r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "changed after the full qa at" in r.stdout
       and "front.txt" in r.stdout, r.stdout)
 check("Reviewed still ignores the merged front (first-parent log)", re.search(r"Reviewed:\s+PASS", r.stdout), r.stdout)
+ledger_cmd("add", "--agent", "qa", "--verdict", "PASS", "--after-full")
+r = gate("--base", "main")
+check("a merge after the full qa asks for the full qa again, even with a partial qa at the head",
+      r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout) and "merge" in r.stdout, r.stdout)
 r = gate("--base", "main", "--cmd", f"Testes (x)={PY} -c \"print('ui')\"")
 check("Full suite is SKIP when --cmd adds a Testes (x) line",
       re.search(r"Full suite:\s+SKIP", r.stdout) and "the gate runs the interface suite (Testes (x))" in r.stdout,

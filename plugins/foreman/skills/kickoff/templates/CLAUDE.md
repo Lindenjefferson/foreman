@@ -26,6 +26,7 @@ Os agentes (`dev`, `qa`) usam esta seção para rodar e verificar o projeto, e o
 - Testes afetados (um arquivo ou filtro, para o `dev`): _(comando)_
 - Testes (verificação do projeto): _(comando dos testes que vigiam o projeto inteiro, como o que proíbe um padrão em qualquer arquivo; o `dev` o roda a cada tarefa e o `reviewer` confere o plano contra eles; opcional)_
 - Arquivos de teste (globs separados por espaço; o `gate.py` procura neles o id de cada critério de aceite): _(globs)_
+- Arquivos globais (opcional; globs dos arquivos que toda tela herda, como tema, navegação e configuração): _(globs; com esta linha, o conserto depois do `qa` da suíte inteira que não toca nenhum deles é reverificado só nos fluxos que falharam e nos que ele toca)_
 - Auditoria (vulnerabilidades das dependências; opcional): _(comando)_
 - Versão (os arquivos que guardam a versão do produto, separados por espaço; todos com o mesmo `x.y.z`, sem sufixo de pré-lançamento, que o `gate.py` exige acima do da branch principal, a cada entrega; o manager a sobe no passo 6): _(ex.: `package.json`)_
 - Depende de (cada sistema externo de que o projeto depende, o que usa dele e a versão ou o contrato, como tag, pacote ou URL; o `foreman` e as extensões de "Preparar uma máquina" são ferramentas de desenvolvimento já declaradas; o scanner de commits aceita o nome declarado aqui, e o `gate.py` avisa quando a linha muda): _(ou "nada")_
@@ -68,8 +69,8 @@ A skill `manager` conduz cada entrega, do tamanho do pedido ao `gate.py` (o flux
 - O que não dá para virar checagem automática (teste, helper, lint) vira uma linha em `docs/lessons.md`, que o `dev` e o `reviewer` leem.
 - O hook `pre-commit` do git (instalado pelo `kickoff`) bloqueia commits com arquivos `.env` ou linhas com cara de segredo. Nunca usar `--no-verify` nem mexer em `.git/hooks`: um segredo commitado fica no histórico.
 - Cada entrega aprovada pelo `gate.py` gera um relatório em `docs/quality-reports/`.
-- Formatos de tela que a rodada de design, as capturas da execução completa e a revisão visual cobrem (se houver tela): _(ex.: a menor largura suportada e o desktop; celular e tablet; a resolução do jogo)_
-- Formatos do ciclo (opcional, se houver mais de um formato de tela): _(os formatos, e ajustes como uma fonte maior, que o `qa` de um ciclo usa nas capturas e no fluxo; sem esta linha, o primeiro de "Formatos de tela". A matriz completa, com todos os formatos e temas, roda só na execução completa)_
+- Formatos de tela que a rodada de design, as capturas da execução completa e a revisão visual cobrem (se houver tela), com os temas e ajustes, como uma fonte maior: _(ex.: a menor largura suportada e o desktop; celular e tablet; a resolução do jogo)_
+- Formatos do ciclo (opcional, se houver mais de um formato de tela): _(os formatos, e ajustes como uma fonte maior, em que o `qa` roda o comportamento, no ciclo e na execução completa: o caso mais restritivo, como a menor tela; sem esta linha, o primeiro de "Formatos de tela". Os outros formatos, temas e ajustes entram só nas capturas e na gravação do fluxo principal, salvo numa entrega com tarefa `Global:`)_
 - Ambiente de testes antes de produção: _(onde a entrega é publicada primeiro e como as migrations passam por ele; os procedimentos ficam em `docs/operacao.md`)_
 
 ## Regras que valem sempre
