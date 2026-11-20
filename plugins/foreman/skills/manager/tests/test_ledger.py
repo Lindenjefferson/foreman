@@ -2129,6 +2129,26 @@ run("add", "--agent", "qa", "--verdict", "PASS", "--interface", ledger=IFACE_HEL
 state = status(IFACE_HELD)
 check("a qa of the interface added then opens no cycle with no diff", state["cycle"] == 2
       and state["ready_for_gate"] is True, (state["cycle"], state["pending"]))
+# a ledger from before the interface mark (its start entry has no interface key) counts the line from the start
+IFACE_OLD = os.path.join(iface, ".superpowers", "old.jsonl")
+run("start", "--slug", "iface-old", ledger=IFACE_OLD, cwd=iface)
+with open(IFACE_OLD, encoding="utf-8") as handle:
+    opening = json.loads(handle.readline())
+check("start records whether the interface line was there", opening.get("interface") is True, opening)
+opening.pop("interface", None)
+with open(IFACE_OLD, "w", encoding="utf-8", newline=chr(10)) as handle:
+    handle.write(json.dumps(opening, ensure_ascii=False) + chr(10))
+add("dev", "DONE", "T1", ledger=IFACE_OLD)
+add("reviewer", "PASS", ledger=IFACE_OLD)
+add("qa", "PASS", ledger=IFACE_OLD)
+check("an older ledger with the line keeps asking cycle 1 for the interface after the update",
+      status(IFACE_OLD)["ready_for_gate"] is False, status(IFACE_OLD)["pending"])
+check("an older ledger gets no interface mark",
+      not any(json.loads(line).get("type") == "interface" for line in open(IFACE_OLD, encoding="utf-8")))
+r = run("add", "--agent", "qa", "--verdict", "MAYBE", ledger=IFACE)
+check("a refused add writes no interface mark",
+      r.returncode != 0 and sum(json.loads(line).get("type") == "interface" for line in open(IFACE, encoding="utf-8"))
+      == 1)
 IFACE_FULL = os.path.join(iface, ".superpowers", "full.jsonl")
 run("start", "--slug", "iface-full", ledger=IFACE_FULL, cwd=iface)
 add("dev", "DONE", "T1", ledger=IFACE_FULL)

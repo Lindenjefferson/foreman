@@ -154,8 +154,8 @@ with open(TERMS, "w", encoding="utf-8") as handle:
     handle.write(NAME + chr(10))
 
 
-def published(command):
-    payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": repo, "tool_input": {"command": command}}
+def published(command, tool="Bash"):
+    payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": repo, "tool_input": {"command": command}}
     done = subprocess.run([sys.executable, GUARD], cwd=repo, input=json.dumps(payload), capture_output=True,
                           text=True, encoding="utf-8")
     out = json.loads(done.stdout)["hookSpecificOutput"] if done.stdout.strip() else {}
@@ -186,6 +186,27 @@ decision, _ = published(f"gh pr view 3 -R {NAME.lower()}/repo")
 check("a term outside the published text (a read, the repo flag) passes", decision is None)
 decision, _ = published(f"echo {NAME}")
 check("a command that publishes nothing is not this check's", decision is None)
+NL = chr(10)
+decision, _ = published('gh pr create --title T --body "$(cat <<' + "'EOF'" + NL + f"by {NAME}" + NL + 'EOF' + NL + ')"')
+check("a body from a heredoc inside $( ) is read from the command", decision == "deny")
+decision, _ = published(f"gh pr comment 5 --body @'{NL}by {NAME}{NL}'@", tool="PowerShell")
+check("a PowerShell here-string body is read from the command", decision == "deny")
+decision, _ = published(f'gh pr comment 5 -b"by {NAME}"')
+check("a short flag glued to its value is read", decision == "deny")
+decision, _ = published(f"gh -R o/r pr comment 5 --body 'by {NAME}'")
+check("a repo flag before the subcommand does not hide it", decision == "deny")
+decision, _ = published("gh pr merge 5 --subject 'by " + NAME + "'")
+check("a merge subject is published text", decision == "deny")
+write("unix.md", f"by {NAME}" + NL)
+decision, _ = published("gh pr create --title x --body-file " + "/" + repo[0].lower() + repo[2:].replace(chr(92), "/")
+                        + "/unix.md")
+check("a body file named by a Git Bash path is read", decision == "deny")
+decision, why = published("gh pr create --title x --body-file nowhere/never.md")
+check("a body file that cannot be read and that the command does not write is denied, saying so",
+      decision == "deny" and "read" in why, why)
+home_file = "C:" + chr(92) + "Users" + chr(92) + "zeb" "ulon" + chr(92) + "AppData" + chr(92) + "b.md"
+decision, why = published(f"cat > '{home_file}' <<'X'{NL}clean text{NL}X{NL}gh pr create --title x --body-file '{home_file}'")
+check("the path of a body file the command writes is not read as the published text", decision is None, why)
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

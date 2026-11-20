@@ -653,7 +653,10 @@ def first(entries, groups):
     first saw it (its interface entry, else now), and none once a qa ran it; a cycle closed before stays closed."""
     if not NEEDS_INTERFACE:
         return False
-    marks = [index for index, entry in enumerate(entries) if entry["type"] == "interface"]
+    opening = entries[0] if entries and entries[0]["type"] == "start" else {}
+    # an older ledger, or one started with the line, counts it from the start
+    marks = [0] if opening.get("interface", True) else [
+        index for index, entry in enumerate(entries) if entry["type"] == "interface"]
     position = {id(entry): index for index, entry in enumerate(entries)}
 
     def closed(group):
@@ -883,7 +886,7 @@ def start(args):
             print(f"{args.slug} prepares in the worktree {tree['worktree']}: no leftover of this delivery")
             return
         write(target, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan, "next": True,
-                       **tree})
+                       "interface": NEEDS_INTERFACE, **tree})
         print(f"preparing {args.slug} in {target}: pass --ledger {target} to its spec and plan rounds (add, measure, "
               f"note, defer); its code starts once this delivery reaches the gate, with start --slug {args.slug} "
               "--archive")
@@ -910,7 +913,8 @@ def start(args):
         os.remove(prepared)
         print(f"promoted {args.slug} from {prepared} at {base[:12]}, its preparation kept")
     else:
-        write(args.ledger, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan})
+        write(args.ledger, {"type": "start", "slug": args.slug, "base": base, **named, "plan": args.plan,
+                         "interface": NEEDS_INTERFACE})
         print(f"started {args.slug} at {base[:12]}")
     report, moved = carried(args.ledger)
     passed, offset, first = [], len(deferred(read(args.ledger))), {}
@@ -1130,9 +1134,6 @@ def add(args):
     entries = read(args.ledger)
     if not entries:
         sys.exit("no delivery started: run start first")
-    if NEEDS_INTERFACE and not any(entry["type"] == "interface" for entry in entries):
-        write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
-        entries = read(args.ledger)
     if args.verdict not in VERDICTS[args.agent]:
         sys.exit(f"{args.agent} verdict must be one of {', '.join(sorted(VERDICTS[args.agent]))}")
     if args.agent == "dev" and not args.task:
@@ -1222,6 +1223,9 @@ def add(args):
     windows = usage_windows(args.ledger)[0]
     if windows:
         entry["usage"] = {name: item["percent"] for name, item in windows.items()}
+    if NEEDS_INTERFACE and entries[0].get("interface") is False and not any(
+            item["type"] == "interface" for item in entries):
+        write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
     write(args.ledger, entry)
     label = f"{args.agent}{' ' + args.task if args.task else ''}: {args.verdict}"
     print(f"{label} (round {len(review_loop(read(args.ledger), args.task))})" if is_review(entry)
