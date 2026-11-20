@@ -83,8 +83,9 @@ full qa found, of the flows that failed and those the fix touches (refused with 
 full_qa_blockers lists anything); status --json gives the latest one after full_qa as after_full_run, which the
 gate's Full suite check reads. add --interface on a qa run marks one that ran the "Verificação de
 interface" command on at least one path. When the CLAUDE.md at the ledger's root gives that line a command (not a
-_(...)_ placeholder), the cycle open when the ledger first sees the line (the first add then records an interface
-entry, so from the start it is cycle 1) closes only once one of its qa runs has --interface or --full: a machine that
+_(...)_ placeholder), the cycle open when the ledger first sees the line (start records whether the line was
+there; when it was not, the first add that sees it records an interface entry; a ledger whose start has no such key
+counts the line from the start, so for it and for a line there from the start it is cycle 1) closes only once one of its qa runs has --interface or --full: a machine that
 cannot run it is a block to make ready, not a VALIDAR. A cycle closed before the line appeared is never reopened (with
 none open, the next cycle needs it), and no cycle needs it once a qa ran it.
 
