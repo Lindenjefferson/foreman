@@ -12,8 +12,7 @@ Toda ideia passa pelo filtro do [`CLAUDE.md`](../CLAUDE.md) e termina numa desta
 ## Backlog
 
 - **Ciclo que nunca fecha quando o manager junta blocos** (melhoria; um projeto do autor, foreman 1.11.0): o plano tinha 9 ciclos pelo `scope`; o manager integrou as tarefas na ordem das dependências e rodou o `reviewer` e o `qa` sobre blocos juntos, e o `qa` nunca deu PASS no ciclo 1 (três FAIL, `fix-1` a `fix-9`). O `status` segue em "cycle 1" e lista 25 runs `held` cujos commits já estão na branch. É o caso de "Juntar o QA de ciclos já codados" (em espera) feito sem apoio do ledger, então o desenho fica com o dono: ou o `status` reconhece uma run `held` já contida no head (e diz uma vez que foi integrada fora de ordem), ou o `scope --cycle` junta os ciclos. Teste primeiro com um ledger assim. Número: runs `held` já contidas no head (meta 0). Esforço: M.
-
-- **`qa` completo interrompido recomeça do zero** (melhoria; mesmo projeto e entrega): uma reinicialização do PC no meio da suíte jogou fora 1,5 h, porque nada do que já tinha passado é reaproveitado. Caminho menor, sem ledger novo: o `qa` grava a saída de cada passada que termina na pasta do brief, com o head; despachado de novo no mesmo head, reaproveita as passadas completas e o relatório diz quais. Número: horas de `qa` refeitas no mesmo head (meta 0). Esforço: P.
+- **`qa` completo interrompido recomeça do zero** (melhoria; um projeto do autor): uma reinicialização do PC no meio da suíte jogou fora 1,5 h, porque nada do que já tinha passado é reaproveitado. Caminho menor, sem ledger novo: o `qa` grava a saída de cada passada que termina na pasta do brief, com o head; despachado de novo no mesmo head, reaproveita as passadas completas e o relatório diz quais. Número: horas de `qa` refeitas no mesmo head (meta 0). Esforço: P.
 
 ## Em espera (voltam com um sinal)
 

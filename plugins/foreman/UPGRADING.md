@@ -4,6 +4,18 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.14.0 — texto publicado conferido, documentação conferida na atualização, ledger mais claro
+
+PR #(a definir).
+
+- **Texto publicado pelo `gh` passa pela lista de termos** (melhoria, decisão do dono): um comentário de PR público trouxe nomes internos de um projeto e teve de ser apagado; o `pre-commit` só lê o que entra no git. O `bash-guard.py` nega um `gh pr`, `gh issue` ou `gh release` cujo título, corpo ou notas (ou o arquivo de `--body-file`), ou um `gh api` cujo campo `body` ou `title`, tenha um termo do dono ou um caminho de home, pelas regras do scanner, sem imprimir o termo. A skill `anonimizar` passa a ler também o texto do host (PRs, issues, releases e comentários) e a julgar além da lista o que um estranho aprende sobre o dono e os outros projetos dele; o que o dono confirmar vira termo. Número: comentários ou PRs apagados por vazamento (meta 0).
+- **`gate.py --docs` na atualização** (melhoria): a checagem `Docs` do gate barrou só no fim de uma entrega 6 docs de módulo fora do lugar, que o kickoff comparou pelo sentido (custou um `fix`, uma revisão e um `qa --full`). O `gate.py --docs` roda só essa checagem contra a árvore, e a skill `atualizar` o roda e conserta o que ele mostra antes da próxima entrega. Número: reprovações do gate por estrutura anterior à entrega (meta 0).
+- **`Isolates:` fora do `Touches:`** (melhoria; duas vezes num projeto): "Sem banco." ou "Pilha: cópia própria." no `Touches:` faziam tarefas independentes colidirem no `claim`. O plano põe o que a tarefa isola em `Isolates:`, que o `claim` não lê. Número: colisões falsas por entrega (meta 0).
+- **"Verificação de interface" vale a partir do ciclo em que a linha entra** (melhoria): criada no meio da entrega, a linha reabria o ciclo 1 já fechado e abria um ciclo sem diff. O primeiro `add` que vê a linha grava a marca no ledger, e a cobrança vale só para o ciclo aberto nesse momento. Número: ciclos reabertos ou sem diff (meta 0).
+- **`status` em texto abre com o próximo passo** (melhoria): numa entrega pausada, o `status` tinha 89 linhas. Agora a primeira linha é `next step:`, e as runs retidas e os deferidos sem decisão viram uma linha cada, com a contagem; o texto de cada deferido fica no `--json`, que não mudou. Número: linhas do `status` numa entrega pausada.
+
+**Ao atualizar:** nada quebra; ledgers antigos seguem legíveis. Uma entrega em andamento cujo ciclo 1 fechou sem o `qa` de interface passa a cobrá-lo no próximo ciclo, não no ciclo 1. No plano, o que a tarefa isola sai do `Touches:` e vai para `Isolates:`. Rode o `gate.py --docs` uma vez em cada projeto (a skill `atualizar` já o faz).
+
 ## 1.13.0 — suíte inteira do `qa` enxuta
 
 PR #17.
