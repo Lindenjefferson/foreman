@@ -83,8 +83,10 @@ full qa found, of the flows that failed and those the fix touches (refused with 
 full_qa_blockers lists anything); status --json gives the latest one after full_qa as after_full_run, which the
 gate's Full suite check reads. add --interface on a qa run marks one that ran the "Verificação de
 interface" command on at least one path. When the CLAUDE.md at the ledger's root gives that line a command (not a
-_(...)_ placeholder), the first cycle closes only once one of its qa runs has --interface or --full: a machine that
-cannot run it is a block to make ready, not a VALIDAR. Later cycles do not need it.
+_(...)_ placeholder), the cycle open when the ledger first sees the line (the first add then records an interface
+entry, so from the start it is cycle 1) closes only once one of its qa runs has --interface or --full: a machine that
+cannot run it is a block to make ready, not a VALIDAR. A cycle closed before the line appeared is never reopened (with
+none open, the next cycle needs it), and no cycle needs it once a qa ran it.
 
 The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: once the
 plan has no task left (or with no scope), status gives full_qa_blockers, each missing item (the reviewer's PASS
@@ -429,7 +431,7 @@ REVIEW_ROUNDS = 3
 REVIEWS = ("spec", "plan", "security")
 PARTIAL_REPORT_MINUTES = 90
 INTERFACE_LINE = re.compile(r"^- Verifica[çc][ãa]o de interface[^:\n]*:[ \t]*(.*)$", re.MULTILINE | re.IGNORECASE)
-# Set by main from the project's CLAUDE.md: the first cycle closes only once a qa ran the interface.
+# Set by main from the project's CLAUDE.md: the cycle open when the line appears closes only once a qa ran it.
 NEEDS_INTERFACE = False
 QUALITY_REPORTS = "docs/quality-reports"
 MOVED = re.compile(r"- D\d+ (.*?) -> (moved to .*)", re.IGNORECASE)
@@ -644,9 +646,20 @@ def interface_line(ledger):
     return bool(value) and not value.startswith("_(")
 
 
-def first(groups):
-    """The interface a cycle needs: only the first one, and only when the project has the line."""
-    return NEEDS_INTERFACE and len(groups) == 1
+def first(entries, groups):
+    """The interface the last of groups needs: when the project has the line, only the cycle open when the ledger
+    first saw it (its interface entry, else now), and none once a qa ran it; a cycle closed before stays closed."""
+    if not NEEDS_INTERFACE:
+        return False
+    marks = [index for index, entry in enumerate(entries) if entry["type"] == "interface"]
+    position = {id(entry): index for index, entry in enumerate(entries)}
+
+    def closed(group):
+        before = [entry for entry in group if position[id(entry)] < (marks or [len(entries)])[0]]
+        return bool(before) and cycle_state(before)[1] == []
+    return (not any(entry["agent"] == "qa" and (entry.get("interface") or entry.get("full"))
+                    for group in groups[:-1] for entry in group)
+            and all(closed(group) for group in groups[:-1]) and not closed(groups[-1]))
 
 
 def cycles(entries):
@@ -662,11 +675,11 @@ def cycles(entries):
             groups.append(current)
             current, closed = [], False
         current.append(entry)
-        closed = cycle_state(current, interface=NEEDS_INTERFACE and not groups)[1] == []
+        closed = cycle_state(current, interface=first(entries, groups + [current]))[1] == []
         if closed and waiting:
             groups.append(current)
             current, waiting = waiting, []
-            closed = cycle_state(current)[1] == []
+            closed = cycle_state(current, interface=first(entries, groups + [current]))[1] == []
     groups.append(current)
     return groups
 
@@ -732,7 +745,7 @@ def cycle_state(cycle, autonomous=False, extended=None, interface=False):
     elif last_qa < needs_qa:
         need("qa has not re-run the scenarios the fix touched", "qa", rerun=True)
     elif interface and not any(entry.get("interface") or entry.get("full") for entry in checks):
-        need("cycle 1 closes only once a qa ran the interface (Verificação de interface) on at least one path: open, "
+        need("this cycle closes only once a qa ran the interface (Verificação de interface) on at least one path: open, "
              "sign in, a screen with data; add it with --interface. A machine that cannot run it is a block, never a "
              "VALIDAR: make it ready (Preparar uma máquina) first", "qa", interface=True)
     rounds = 1 if extended is None else 0
@@ -1115,6 +1128,9 @@ def add(args):
     entries = read(args.ledger)
     if not entries:
         sys.exit("no delivery started: run start first")
+    if NEEDS_INTERFACE and not any(entry["type"] == "interface" for entry in entries):
+        write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
+        entries = read(args.ledger)
     if args.verdict not in VERDICTS[args.agent]:
         sys.exit(f"{args.agent} verdict must be one of {', '.join(sorted(VERDICTS[args.agent]))}")
     if args.agent == "dev" and not args.task:
@@ -1166,7 +1182,7 @@ def add(args):
     if args.agent == "dev" and not FOLLOW_UP.fullmatch(args.task):
         groups = cycles(entries)
         cycle = groups[-1]
-        later = later_cycle(entries, cycle, args.task) if cycle_state(cycle, interface=first(groups))[1] else None
+        later = later_cycle(entries, cycle, args.task) if cycle_state(cycle, interface=first(entries, groups))[1] else None
     entry = {"type": "run", "agent": args.agent, "task": args.task, "verdict": args.verdict, "open": blocking,
              "critical": args.critical, "important": args.important, "minor": args.minor,
              "origin": tally("--origin", ORIGINS, args.origin, blocking + args.minor),
@@ -1577,7 +1593,7 @@ def claim(args):
     if crossed:
         sys.exit(f"{args.task} collides with a task in flight: {'; '.join(crossed)}; it waits for that task's add")
     groups = cycles(entries)
-    done = cycle_state(groups[-1], interface=first(groups))[0]["tasks"].get(args.task)
+    done = cycle_state(groups[-1], interface=first(entries, groups))[0]["tasks"].get(args.task)
     if done and done["verdict"] in DONE:
         sys.exit(f"{args.task} is already done in cycle {len(groups)}: use a new task id (fix-N for a fix round)")
     where = {}
@@ -1794,7 +1810,7 @@ def extend(args):
     else:
         groups = cycles(entries)
         cycle = groups[-1]
-        state = cycle_state(cycle, autonomous(entries), extension(entries, cycle), first(groups))[0]
+        state = cycle_state(cycle, autonomous(entries), extension(entries, cycle), first(entries, groups))[0]
         if not any(step["step"] in ("stop", "ask") for step in state["steps"]):
             sys.exit("the cycle has not run out of fix rounds: nothing to extend")
         text = f"extra fix round: {args.reason}"
@@ -2235,7 +2251,7 @@ def status(args):
         entries = read(args.ledger)
     groups = cycles(entries)
     auto = autonomous(entries)
-    state, pending = cycle_state(groups[-1], auto, extension(entries, groups[-1]), first(groups))
+    state, pending = cycle_state(groups[-1], auto, extension(entries, groups[-1]), first(entries, groups))
     closed = not pending
     items = deferred(entries)
     held = in_flight(entries)

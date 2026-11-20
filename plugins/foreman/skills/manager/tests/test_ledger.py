@@ -2072,26 +2072,63 @@ check("with the interface line still a placeholder, cycle 1 closes on a qa PASS"
       status(IFACE)["ready_for_gate"] is True, status(IFACE)["pending"])
 iface_line("`npx maestro test e2e/`")
 state = status(IFACE)
-check("with an interface command, cycle 1 does not close until a qa ran it, and says the machine is a block",
-      state["ready_for_gate"] is False and any("interface" in item and "Preparar uma máquina" in item
-                                               for item in state["pending"])
-      and {"step": "qa", "interface": True} in state["steps"], state["pending"])
+check("a line that appears once cycle 1 closed does not reopen it", state["cycle"] == 1
+      and state["ready_for_gate"] is True, state["pending"])
 add("dev", "DONE", "T2", ledger=IFACE)
-check("a dev task added before the interface ran stays in cycle 1", status(IFACE)["cycle"] == 1, status(IFACE)["cycle"])
+add("reviewer", "PASS", ledger=IFACE)
+add("qa", "PASS", ledger=IFACE)
+state = status(IFACE)
+check("the cycle open when the line appears does not close until a qa ran it, and says the machine is a block",
+      state["cycle"] == 2 and state["ready_for_gate"] is False
+      and any("interface" in item and "Preparar uma máquina" in item for item in state["pending"])
+      and {"step": "qa", "interface": True} in state["steps"], state["pending"])
+add("dev", "DONE", "T2b", ledger=IFACE)
+check("a dev task added before the interface ran stays in that cycle", status(IFACE)["cycle"] == 2,
+      status(IFACE)["cycle"])
 r = run("add", "--agent", "reviewer", "--verdict", "PASS", "--interface", ledger=IFACE)
 check("--interface is refused on the reviewer", r.returncode != 0 and "--interface" in r.stderr, r.stderr)
 add("reviewer", "PASS", ledger=IFACE)
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--interface", ledger=IFACE)
 state = status(IFACE)
-check("a qa added with --interface closes cycle 1 and is stored on the run",
+check("a qa added with --interface closes that cycle and is stored on the run",
       r.returncode == 0 and state["ready_for_gate"] is True and state["qa"][0].get("interface") is True,
       (r.stderr, state["pending"]))
 add("dev", "DONE", "T3", ledger=IFACE)
 add("reviewer", "PASS", ledger=IFACE)
 add("qa", "PASS", ledger=IFACE)
 state = status(IFACE)
-check("a later cycle closes on a qa PASS with no interface run", state["cycle"] == 2 and state["ready_for_gate"] is True,
+check("a later cycle closes on a qa PASS with no interface run", state["cycle"] == 3 and state["ready_for_gate"] is True,
       state["pending"])
+# With the line there from the start, cycle 1 needs it; a run of the next plan cycle held meanwhile is no empty cycle
+iface_line("`npx maestro test e2e/`")
+IFACE_START = os.path.join(iface, ".superpowers", "start.jsonl")
+run("start", "--slug", "iface-start", ledger=IFACE_START, cwd=iface)
+add("dev", "DONE", "T1", ledger=IFACE_START)
+add("reviewer", "PASS", ledger=IFACE_START)
+add("qa", "PASS", ledger=IFACE_START)
+check("with the line from the start, cycle 1 does not close until a qa ran the interface",
+      status(IFACE_START)["ready_for_gate"] is False, status(IFACE_START)["pending"])
+IFACE_HELD = os.path.join(iface, ".superpowers", "held.jsonl")
+iface_line("_(comando)_")
+run("start", "--slug", "iface-held", ledger=IFACE_HELD, cwd=iface)
+run("scope", "--cycle", "1", "--tasks", "T1", ledger=IFACE_HELD)
+run("scope", "--cycle", "2", "--tasks", "T11,T12", ledger=IFACE_HELD)
+add("dev", "DONE", "T1", ledger=IFACE_HELD)
+add("dev", "DONE", "T11", ledger=IFACE_HELD)
+add("reviewer", "PASS", ledger=IFACE_HELD)
+add("qa", "PASS", ledger=IFACE_HELD)
+add("dev", "DONE", "T12", ledger=IFACE_HELD)
+add("reviewer", "PASS", ledger=IFACE_HELD)
+add("qa", "PASS", ledger=IFACE_HELD)
+iface_line("`npx maestro test e2e/`")
+state = status(IFACE_HELD)
+check("a line created in cycle 2, once closed, reopens no cycle and holds no run",
+      state["cycle"] == 2 and state["ready_for_gate"] is True and not any("held" in item for item in state["pending"]),
+      (state["cycle"], state["pending"]))
+run("add", "--agent", "qa", "--verdict", "PASS", "--interface", ledger=IFACE_HELD)
+state = status(IFACE_HELD)
+check("a qa of the interface added then opens no cycle with no diff", state["cycle"] == 2
+      and state["ready_for_gate"] is True, (state["cycle"], state["pending"]))
 IFACE_FULL = os.path.join(iface, ".superpowers", "full.jsonl")
 run("start", "--slug", "iface-full", ledger=IFACE_FULL, cwd=iface)
 add("dev", "DONE", "T1", ledger=IFACE_FULL)
