@@ -6,7 +6,7 @@ O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `
 
 ## 1.14.0 — texto publicado conferido, documentação conferida na atualização, ledger mais claro
 
-PR #(a definir).
+PR #18.
 
 - **Texto publicado pelo `gh` passa pela lista de termos** (melhoria, decisão do dono): um comentário de PR público trouxe nomes internos de um projeto e teve de ser apagado; o `pre-commit` só lê o que entra no git. O `bash-guard.py` nega um `gh pr`, `gh issue` ou `gh release` cujo título, corpo ou notas (ou o arquivo de `--body-file`), ou um `gh api` cujo campo de texto, tenha um termo do dono ou um caminho de home, pelas regras do scanner, sem imprimir o termo; um valor que o shell monta (`$( )`, heredoc, here-string, variável) é lido do comando inteiro, e um arquivo que ninguém consegue ler daqui é negado. Pela revisão do Fable. A skill `anonimizar` passa a ler também o texto do host (PRs, issues, releases e comentários) e a julgar além da lista o que um estranho aprende sobre o dono e os outros projetos dele; o que o dono confirmar vira termo. Número: comentários ou PRs apagados por vazamento (meta 0).
 - **`gate.py --docs` na atualização** (melhoria): a checagem `Docs` do gate barrou só no fim de uma entrega 6 docs de módulo fora do lugar, que o kickoff comparou pelo sentido (custou um `fix`, uma revisão e um `qa --full`). O `gate.py --docs` roda só essa checagem contra a árvore, e a skill `atualizar` o roda e conserta o que ele mostra antes da próxima entrega. Número: reprovações do gate por estrutura anterior à entrega (meta 0).
