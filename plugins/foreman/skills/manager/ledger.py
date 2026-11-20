@@ -288,7 +288,9 @@ out, and the list is empty while a task in flight has none. Both are advice, nev
 Status data and plan progress
 -----------------------------
 
-status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
+The text status opens with the next step, the first pending item, in one line, and gives the runs held for a later
+plan cycle and the deferred items with no decision one line per kind, with their count and ids; status --json keeps
+each one in pending. status --json also gives the pending items as data and where the delivery is in its plan. claims: one {task, at,
 worktree, origin, tip, head_moved} per task in flight; paused: {text, at} or null; full_qa: the latest qa run added
 with --full, or null; after_full_run: the latest qa run added with --after-full after it, or null; after_full_qa:
 the files changed since its head (docs/ aside), or null, and the text says the gate's Full suite will ask for a qa
@@ -2275,10 +2277,12 @@ def status(args):
                        f"--task {task}{since}" if later else
                        f"dev {task} dispatched at {at}, no report yet (add it as soon as it reports, or "
                        f"release --task {task}){since}")
-    pending += [f"dev {entry['task']} {entry['verdict']} held for plan cycle {entry['after']}: integrate it once this "
-                "cycle closes, and the next cycle starts from the head that closes it" for entry in held_runs(entries)]
-    pending += [f"deferred {item['id']} has no decision: {item['text']}" + advice(item)
-                for item in items if not item["decision"]]
+    kept_back = held_runs(entries)
+    undecided = [item for item in items if not item["decision"]]
+    grouped = [f"dev {entry['task']} {entry['verdict']} held for plan cycle {entry['after']}: integrate it once this "
+               "cycle closes, and the next cycle starts from the head that closes it" for entry in kept_back]
+    grouped += [f"deferred {item['id']} has no decision: {item['text']}" + advice(item) for item in undecided]
+    pending += grouped
     steps += [step for _, step in kept] + [{"step": "decide", "id": item["id"], "text": item["text"],
                                             **advice_of(item)} for item in items if not item["decision"]]
     marks = [entry["reason"] for entry in entries if entry["type"] == "sensitive"]
@@ -2350,6 +2354,7 @@ def status(args):
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
+        print(f"next step: {pending[0]}" if pending else "next step: the gate")
         print(f"delivery {report['slug']} (base {str(report['base'])[:12]}), cycle {report['cycle']}"
               + (f" from {report['from'][:12]}" if report["from"] else ""))
         if auto:
@@ -2406,7 +2411,15 @@ def status(args):
                   "them: dispatch them now, as capacity allows; when a setting holds them (the limit of heavy copies), "
                   "tell the user, with your recommendation")
         for item in pending:
-            print(f"pending: {item}")
+            if item not in grouped:
+                print(f"pending: {item}")
+        if kept_back:
+            print(f"held ({len(kept_back)}): " + ", ".join(f"{entry['task']} (plan cycle {entry['after']})"
+                                                          for entry in kept_back)
+                  + ": integrate each once this cycle closes, and the next cycle starts from the head that closes it")
+        if undecided:
+            print(f"deferred with no decision ({len(undecided)}): {', '.join(item['id'] for item in undecided)}: "
+                  "resolve each before the gate (status --json gives their texts and recommendations)")
         for item in upcoming:
             print(f"next: {item['slug']} in {item['ledger']}: " + ("; ".join(item["pending"]) or "no review pending")
                   + f"; once this delivery reaches the gate, start --slug {item['slug']} --archive promotes it")

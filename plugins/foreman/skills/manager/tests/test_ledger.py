@@ -153,20 +153,20 @@ for agent, verdict, task, count in (("dev", "DONE", "T1", 0), ("reviewer", "FAIL
 check("no qa yet in the cycle: qa still runs on the cycle's tasks",
       status(FIRST)["pending"] == ["qa has not run on the cycle's tasks"], status(FIRST)["pending"])
 
-ORDER = ".superpowers/order.jsonl"
-run("start", "--slug", "order", ledger=ORDER)
+PAUSED = ".superpowers/paused-order.jsonl"
+run("start", "--slug", "paused-order", ledger=PAUSED)
 for agent, verdict, task in (("dev", "DONE", "T1"), ("qa", "PASS", None), ("reviewer", "PASS", None)):
-    add(agent, verdict, task, ledger=ORDER)
-check("qa may finish before the reviewer", status(ORDER)["ready_for_gate"] is True, status(ORDER)["pending"])
+    add(agent, verdict, task, ledger=PAUSED)
+check("qa may finish before the reviewer", status(PAUSED)["ready_for_gate"] is True, status(PAUSED)["pending"])
 for agent, verdict, task, count in (("dev", "DONE", "T2", 0), ("reviewer", "FAIL", None, 1), ("qa", "PASS", None, 0),
                                     ("dev", "DONE", "fix-1", 0), ("reviewer", "PASS", None, 0),
                                     ("qa", "PASS", None, 0), ("dev", "DONE", "fix-2", 0)):
-    add(agent, verdict, task, count, ledger=ORDER)
+    add(agent, verdict, task, count, ledger=PAUSED)
 check("a later fix of Minors only needs the reviewer, not qa",
-      status(ORDER)["pending"] == ["reviewer has not reviewed the latest changes"], status(ORDER)["pending"])
-add("dev", "DONE", "cleanup", ledger=ORDER)
-add("reviewer", "PASS", ledger=ORDER)
-state = status(ORDER)
+      status(PAUSED)["pending"] == ["reviewer has not reviewed the latest changes"], status(PAUSED)["pending"])
+add("dev", "DONE", "cleanup", ledger=PAUSED)
+add("reviewer", "PASS", ledger=PAUSED)
+state = status(PAUSED)
 check("the cleanup task stays in the cycle and needs only the reviewer",
       state["cycle"] == 2 and "cleanup" in state["tasks"] and state["ready_for_gate"] is True, state)
 check("cleanup is not a fix round", state["metrics"]["cycles"][1]["fix_rounds"] == 2, state["metrics"])
@@ -3047,6 +3047,28 @@ commit_old("src.txt", "b\n")
 r = subprocess.run([sys.executable, GATE, "--base", "main"], cwd=old, capture_output=True, text=True, encoding="utf-8")
 check("once a commit follows it, the gate asks for the full qa again at the final head",
       re.search(r"Full suite:\s+FAIL", r.stdout) and "changed after the full qa" in r.stdout, r.stdout + r.stderr)
+
+# The text status opens with the next action, and runs held or items deferred show as one line per type with a count
+PAUSED = ".superpowers/paused-order.jsonl"
+run("start", "--slug", "paused-order", ledger=PAUSED)
+run("scope", "--cycle", "1", "--tasks", "O1", ledger=PAUSED)
+run("scope", "--cycle", "2", "--tasks", "O2,O3", ledger=PAUSED)
+for task in ("O1", "O2", "O3"):
+    add("dev", "DONE", task, ledger=PAUSED)
+for text in ("first item", "second item", "third item"):
+    run("defer", "--text", text, "--recommend", "later", ledger=PAUSED)
+run("pause", "--text", "back tomorrow", ledger=PAUSED)
+lines = run("status", ledger=PAUSED).stdout.splitlines()
+state = status(PAUSED)
+check("the text status opens with the next action in one line",
+      lines and lines[0].startswith("next step: delivery paused") and "back tomorrow" in lines[0], lines[:3])
+check("held runs and deferred items show as one line each, with their count and ids",
+      sum("held" in line for line in lines) == 1 and any("held (2)" in line and "O2" in line and "O3" in line
+                                                         for line in lines)
+      and any("deferred with no decision (3)" in line and "D1" in line and "D3" in line for line in lines)
+      and not any("second item" in line for line in lines), lines)
+check("status --json still lists each pending item", sum("held" in item for item in state["pending"]) == 2
+      and sum(item.startswith("deferred ") for item in state["pending"]) == 3, state["pending"])
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
