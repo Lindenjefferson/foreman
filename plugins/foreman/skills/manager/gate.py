@@ -3,6 +3,7 @@
 
   gate.py [--base <rev>] [--ledger <path>] [--cmd Name=command ...] [--report <slug>]
   gate.py --criteria <task> [--ledger <path>]     only the Criteria check, for that task's criteria; exits 0 or 1
+  gate.py --docs                                  only the Docs check, against the tree, with no ledger; exits 0 or 1
 
 A criterion is an id that opens a list item of the plan (- AC-T3-2, * **AC-T3-2**, 1. `AC-T3-2`); an id written
 anywhere else is cited, a warning ("cited, never defined") and never traced, and a plan where no id opens a list
@@ -956,8 +957,13 @@ def main():
     parser.add_argument("--cmd", action="append", default=[], help="Name=command, adds or overrides a check")
     parser.add_argument("--report", metavar="SLUG")
     parser.add_argument("--criteria", metavar="TASK", help="trace only that task's criteria to tests, nothing else")
+    parser.add_argument("--docs", action="store_true", help="run only the Docs check against the tree, nothing else")
     args = parser.parse_args()
 
+    if args.docs:
+        ok, detail = docs()
+        print(f"Docs: {'PASS' if ok else 'FAIL'}" + "".join("\n    " + line for line in detail.splitlines()))
+        sys.exit(0 if ok else 1)
     ledger, problem = ledger_state(args.ledger)
     if args.criteria:
         if not ledger:
