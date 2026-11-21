@@ -6,7 +6,7 @@ O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `
 
 ## 1.14.1 — critério em item de checklist
 
-PR #(a definir).
+PR #19.
 
 - **O `gate.py` reconhece o critério que abre um item de checklist** (`- [ ] **AC-T3-2**`, `- [x] AC-T3-2`). Antes ele virava "cited, never defined" e saía do rastreio dos critérios sem teste quando o plano misturava as duas formas, e um projeto do autor precisou de um commit só para tirar as caixas do plano.
 
