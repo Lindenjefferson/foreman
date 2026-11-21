@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.14.1 — critério em item de checklist
+
+PR #19.
+
+- **O `gate.py` reconhece o critério que abre um item de checklist** (`- [ ] **AC-T3-2**`, `- [x] AC-T3-2`). Antes ele virava "cited, never defined" e saía do rastreio dos critérios sem teste quando o plano misturava as duas formas, e um projeto do autor precisou de um commit só para tirar as caixas do plano.
+
+**Ao atualizar:** nada muda. Um plano escrito como checklist passa a ter esses critérios rastreados; os que não tiverem teste aparecem no `Criteria`.
+
 ## 1.14.0 — texto publicado conferido, documentação conferida na atualização, ledger mais claro
 
 PR #18.

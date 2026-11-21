@@ -5,8 +5,8 @@
   gate.py --criteria <task> [--ledger <path>]     only the Criteria check, for that task's criteria; exits 0 or 1
   gate.py --docs                                  only the Docs check, against the tree, with no ledger; exits 0 or 1
 
-A criterion is an id that opens a list item of the plan (- AC-T3-2, * **AC-T3-2**, 1. `AC-T3-2`); an id written
-anywhere else is cited, a warning ("cited, never defined") and never traced, and a plan where no id opens a list
+A criterion is an id that opens a list item of the plan (- AC-T3-2, * **AC-T3-2**, 1. `AC-T3-2`, - [ ] AC-T3-2); an
+id written anywhere else is cited, a warning ("cited, never defined") and never traced, and a plan where no id opens a list
 item is read as before, every id a criterion (one opening an item of the plan's ## Errata too, as a fix round's
 criteria). A task's criteria, for --criteria, are those with a segment that is the
 task id or ends with it right after a digit (AC-T3-2, AC-PL-T3-2 and AC-074T3-2 are T3's; AC-T31-2 is not), and,
@@ -108,7 +108,8 @@ CRITERION_ANY = re.compile(r"(?<![\w-])AC-[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*")
 # match backtracks to AC-05 and the gate traces a criterion the plan never wrote.
 CRITERION = re.compile(CRITERION_ANY.pattern + r"(?![<{\w-])")
 # A criterion is defined where its id opens a list item (after ** or a backtick); anywhere else it is only cited.
-DEFINED = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+[*_`]*(" + CRITERION.pattern + ")", re.MULTILINE)
+DEFINED = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?[*_`]*(" + CRITERION.pattern + ")",
+                     re.MULTILINE)
 MINUTES = 15
 DAY = 24 * 60 * 60
 REPORTS = "docs/quality-reports"

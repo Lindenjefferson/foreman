@@ -215,6 +215,13 @@ r = gate("--base", "main")
 trace = r.stdout.split("Criteria:")[1].split("\n    ")[1] if "Criteria:" in r.stdout else ""
 check("an id opening a list item after ** or a backtick is defined: the one with no test is named",
       "Criteria:   FAIL" in r.stdout and trace.split("\n")[0].strip() == "criteria with no test: AC-T7-1", r.stdout)
+commit("plan.md", "# plan\n- **AC-T1-1** Given a.\n* [x] `AC-T1-2` Given x.\n1. [X] **`AC-T1.3`** Given y.\n"
+       "- [ ] AC-T7-1 Given z.\n## Errata\n", "docs: ids defined in checklist items")
+r = gate("--base", "main")
+trace = r.stdout.split("Criteria:")[1].split("\n    ")[1] if "Criteria:" in r.stdout else ""
+check("an id opening a checklist item ([ ] or [x]) is defined like any list item",
+      "Criteria:   FAIL" in r.stdout and trace.split("\n")[0].strip() == "criteria with no test: AC-T7-1"
+      and "cited, never defined" not in r.stdout, r.stdout)
 r = gate("--criteria", "T1")
 check("--criteria <task> traces only that task's criteria, runs nothing else and exits 0 when each has a test",
       r.returncode == 0 and "Criteria T1: PASS" in r.stdout and "running" not in r.stdout
