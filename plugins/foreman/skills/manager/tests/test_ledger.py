@@ -2060,7 +2060,7 @@ IFACE = os.path.join(iface, ".superpowers", "ledger.jsonl")
 def iface_line(value):
     with open(os.path.join(iface, "CLAUDE.md"), "w", encoding="utf-8", newline="\n") as handle:
         handle.write("# p\n\n## Comandos\n\n- Testes: `npm test`\n"
-                     f"- Verificação de interface (se houver tela): {value}\n\n## Outra\n")
+                     f"- Verificação de interface (se houver tela: web): {value}\n\n## Outra\n")
 
 
 iface_line("_(comando)_")
