@@ -6,7 +6,7 @@ O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `
 
 ## 1.14.2 — dois-pontos no parêntese do rótulo
 
-PR #(a definir).
+PR #20.
 
 - **Os rótulos do `CLAUDE.md` aceitam dois-pontos dentro do parêntese** (`- Arquivos globais (o que toda tela herda: tema): ...`). Antes o `gate.py` e o `ledger.py` cortavam o rótulo no primeiro dois-pontos e ignoravam a linha em silêncio: "Arquivos globais" deixava de dispensar a suíte inteira, e o mesmo valia para os comandos, o "Tempo máximo", o "Ambiente dos comandos" e a "Verificação de interface". Um projeto do autor precisou de um commit só para tirar o dois-pontos.
 
