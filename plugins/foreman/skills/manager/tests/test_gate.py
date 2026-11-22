@@ -439,7 +439,7 @@ r = gate("--base", "main", "--cmd", f"Lint=CI=1 {PY} -c \"import os, sys; sys.ex
 check("the commands run in the shell of the Bash tool: a variable before the command is set",
       re.search(r"Lint:\s+PASS", r.stdout), r.stdout)
 commit("CLAUDE.md", claude_md(test_files="tests/* e2e/**/*.spec.txt", audit=True).replace(
-       "\n\n## Outra seção", "\n- Tempo máximo de cada comando do gate, em minutos (padrão 15): `0.05`\n\n## Outra seção"),
+       "\n\n## Outra seção", "\n- Tempo máximo de cada comando do gate, em minutos (padrão: 15): `0.05`\n\n## Outra seção"),
        "docs: gate timeout")
 ledger("--agent", "reviewer", "--verdict", "PASS")
 marker = os.path.join(base_dir, "late.txt").replace("\\", "/")
@@ -690,7 +690,7 @@ r = gate("--base", "main")
 check("without an Arquivos globais line, a partial qa never stands in for the full qa",
       added.returncode == 0 and r.returncode == 1 and re.search(r"Full suite:\s+FAIL", r.stdout)
       and "late.txt" in r.stdout and '"Arquivos globais" line' in r.stdout, r.stdout)
-commit("CLAUDE.md", FULL + UI + "- Arquivos globais: `tema/*`\n", "docs: global files line")
+commit("CLAUDE.md", FULL + UI + "- Arquivos globais (o que toda tela herda: tema): `tema/*`\n", "docs: global files line")
 ledger_cmd("add", "--agent", "dev", "--task", "fix-4", "--verdict", "DONE")
 ledger_cmd("add", "--agent", "reviewer", "--verdict", "PASS")
 r = ledger_cmd("add", "--agent", "qa", "--verdict", "FAIL", "--important", "1", "--origin", "execution=1", "--full")

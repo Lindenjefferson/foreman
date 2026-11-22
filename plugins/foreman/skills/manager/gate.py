@@ -182,9 +182,13 @@ def claude_md():
     return open("CLAUDE.md", encoding="utf-8").read() if os.path.exists("CLAUDE.md") else ""
 
 
+# A label's text up to its colon; a colon inside the label's parentheses is part of the label.
+LABEL = r"(?:[^:(\n]|\([^)\n]*\))"
+COMMAND_LINE = re.compile(r"^\s*[-*]\s*(" + LABEL + r"+):\s*`([^`]+)`", re.MULTILINE)
+
+
 def comandos():
-    return [(label.strip(), value.strip())
-            for label, value in re.findall(r"(?m)^\s*[-*]\s*([^:\n]+):\s*`([^`]+)`", comandos_section(claude_md()))]
+    return [(label.strip(), value.strip()) for label, value in COMMAND_LINE.findall(comandos_section(claude_md()))]
 
 
 def label_key(label):
@@ -226,7 +230,7 @@ def comandos_change(base):
 
 
 def time_limit():
-    line = re.search(r"(?im)^\s*[-*]\s*tempo m[áa]ximo[^:\n]*:(.*)$", comandos_section(claude_md()))
+    line = re.search(r"(?im)^\s*[-*]\s*tempo m[áa]ximo" + LABEL + r"*:(.*)$", comandos_section(claude_md()))
     value = line.group(1).strip() if line else ""
     if not value or re.fullmatch(r"_\(.*\)_", value):
         return MINUTES * 60
@@ -424,7 +428,7 @@ def command_lines():
     first = text[:section.start(1)].count("\n") + 1
     found = {}
     for offset, line in enumerate(section.group(1).split("\n")):
-        command = re.match(r"\s*[-*]\s*([^:\n]+):\s*`([^`]+)`", line)
+        command = COMMAND_LINE.match(line)
         if command and leaves(command.group(2), ""):
             found[first + offset] = command.group(1).strip()
     return found
@@ -644,7 +648,7 @@ def environment():
         text = open("CLAUDE.local.md", encoding="utf-8").read()
     except OSError:
         return None
-    found = re.search(r"(?mi)^\s*[-*]\s*Ambiente dos comandos[^:\n]*:\s*`([^`]+)`", text)
+    found = re.search(r"(?mi)^\s*[-*]\s*Ambiente dos comandos" + LABEL + r"*:\s*`([^`]+)`", text)
     return found.group(1).strip() if found and found.group(1).strip() else None
 
 

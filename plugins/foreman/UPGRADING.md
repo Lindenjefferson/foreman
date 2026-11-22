@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.14.2 — dois-pontos no parêntese do rótulo
+
+PR #(a definir).
+
+- **Os rótulos do `CLAUDE.md` aceitam dois-pontos dentro do parêntese** (`- Arquivos globais (o que toda tela herda: tema): ...`). Antes o `gate.py` e o `ledger.py` cortavam o rótulo no primeiro dois-pontos e ignoravam a linha em silêncio: "Arquivos globais" deixava de dispensar a suíte inteira, e o mesmo valia para os comandos, o "Tempo máximo", o "Ambiente dos comandos" e a "Verificação de interface". Um projeto do autor precisou de um commit só para tirar o dois-pontos.
+
+**Ao atualizar:** nada muda. Uma linha com dois-pontos no parêntese passa a ser lida.
+
 ## 1.14.1 — critério em item de checklist
 
 PR #19.

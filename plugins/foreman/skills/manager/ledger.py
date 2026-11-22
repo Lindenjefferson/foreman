@@ -433,7 +433,9 @@ SEVERITIES = ("critical", "important", "minor")
 REVIEW_ROUNDS = 3
 REVIEWS = ("spec", "plan", "security")
 PARTIAL_REPORT_MINUTES = 90
-INTERFACE_LINE = re.compile(r"^- Verifica[çc][ãa]o de interface[^:\n]*:[ \t]*(.*)$", re.MULTILINE | re.IGNORECASE)
+# a colon inside the label's parentheses is part of the label, as in gate.py's LABEL
+INTERFACE_LINE = re.compile(r"^- Verifica[çc][ãa]o de interface(?:[^:(\n]|\([^)\n]*\))*:[ \t]*(.*)$",
+                            re.MULTILINE | re.IGNORECASE)
 # Set by main from the project's CLAUDE.md: the cycle open when the line appears closes only once a qa ran it.
 NEEDS_INTERFACE = False
 QUALITY_REPORTS = "docs/quality-reports"
