@@ -4,6 +4,16 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.14.3 — `claim` e `add` do `qa` sem atrito de formato
+
+PR #21.
+
+- **Uma nota entre parênteses no `Touches:` não é arquivo** (defeito): duas tarefas com "(novo)" ao lado de um arquivo novo colidiam no `claim` por "(novo)", e uma delas esperou a outra cerca de 17 min sem dividir arquivo nenhum num projeto do autor. Os parênteses depois de um espaço saem; os de dentro de um caminho (um grupo de rotas, `app/(tabs)/x.tsx`) ficam. Número: colisões falsas por entrega (meta 0).
+- **O plano de uma preparação é lido na worktree dela** (defeito): com `plan --path` relativo numa entrega em preparação (`start --next --worktree`), o `claim` procurava o plano só na worktree principal e respondia que a tarefa não tinha linha `Touches:`, quando o arquivo é que não foi achado. Agora o caminho relativo é procurado também na worktree registrada, e, sem plano achado, o `claim` diz isso e pede o caminho absoluto.
+- **`ports:` na linha logo abaixo de `Processes:`** (melhoria): o `add` do `qa` recusava o relatório que trazia as portas na linha seguinte, e o manager de um projeto do autor teve de editar uma cópia à mão. A informação está lá; o `add` passa a lê-la, e a porta que ainda aceita conexão continua barrando.
+
+**Ao atualizar:** nada muda.
+
 ## 1.14.2 — dois-pontos no parêntese do rótulo
 
 PR #20.

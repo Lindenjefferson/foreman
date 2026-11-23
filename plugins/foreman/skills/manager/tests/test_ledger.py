@@ -3090,5 +3090,31 @@ check("held runs and deferred items show as one line each, with their count and 
 check("status --json still lists each pending item", sum("held" in item for item in state["pending"]) == 2
       and sum(item.startswith("deferred ") for item in state["pending"]) == 3, state["pending"])
 
+# A note in parentheses beside a path is no Touches: item, so two tasks that each note "(novo)" do not collide;
+# parentheses inside a path (a route group) stay part of it
+noted = "### T2\n- Touches: `src/a.ts` (novo), `src/b.ts`\n### T7\n- Touches: `src/c.ts` (novo), app/(tabs)/x.tsx (novo)\n"
+mine = ledger_module.touch_items(ledger_module.plan_field(noted, "T7", "Touches"))
+check("a parenthesized note beside a path is no Touches: item, and a path with parentheses keeps them",
+      mine == ["src/c.ts", "app/(tabs)/x.tsx"] and ledger_module.crossings(mine, noted, ["T2"]) == [], mine)
+
+# A preparation's plan, given by a relative path, is read in the worktree start --next named
+prep = tempfile.mkdtemp(prefix="prep_")
+os.makedirs(os.path.join(prep, "docs", "plans"))
+with open(os.path.join(prep, "docs", "plans", "so-na-preparacao.md"), "w", encoding="utf-8") as plan_file:
+    plan_file.write("### T2\n- Touches: `src/x.ts`\n")
+found = ledger_module.plan_text([{"type": "start", "worktree": prep},
+                                 {"type": "plan", "plan": "docs/plans/so-na-preparacao.md"}],
+                                os.path.join(repo, ".superpowers", "next-x.jsonl"))
+check("a relative plan path of a preparation is read in its worktree", "src/x.ts" in found, found)
+
+# qa that writes ports: on the line right below Processes: is read as giving them
+PORTS = ".superpowers/ports.jsonl"
+run("start", "--slug", "ports", ledger=PORTS)
+add("dev", "DONE", "P1", ledger=PORTS)
+below = report_file("ports-below.md", lines=["Verdict: PASS", f"Commit: {head()[:7]}", "Interface: n/a",
+                                             "Processes: none left running", "ports: none"])
+r = run("add", "--agent", "qa", "--verdict", "PASS", "--report", below, ledger=PORTS)
+check("add --agent qa reads ports: on the line right below Processes:", r.returncode == 0, r.stderr)
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

@@ -126,7 +126,8 @@ token counts of its last message with usage), unless --seconds or --tokens is gi
 alone (the dev's report is checked before integrating, never saved), and with no transcript it is refused, naming
 --seconds; a qa --report must hold the
 Verdict:, Commit:, Interface: and Processes: lines of qa.md's report (Verdict the one given, Commit a commit here,
-Processes naming the ports qa started a server on, ports: none when none, and none of them still accepting
+Processes naming the ports qa started a server on (on that line or the one right below), ports: none when none,
+and none of them still accepting
 connections, on 127.0.0.1 or ::1),
 and the run stores that commit as tested, and stale when it is not the latest dev run's head or later (a run held for
 a later plan cycle left out): a qa dispatched before a fix counts only for what came before it, so its FAIL still asks
@@ -167,7 +168,8 @@ waive and extend of those loops), a discovery run, measure, note, defer, resolve
 refuses the rest (a cycle's review), naming the promotion. Once its plan is approved (plan --path), it also takes the
 claim of a task that collides with nothing of the current delivery (the ledger.jsonl beside it), and that task's dev
 run and release: every item of the task's Touches: line (each `quoted` path, and each other comma- or
-semicolon-separated item) must differ from every file the current delivery changed (<its base>..HEAD) and from every
+semicolon-separated item, a note in parentheses after a space such as (novo) left out; a relative plan path is read
+from the current folder, the preparation's --worktree, then the ledger's root) must differ from every file the current delivery changed (<its base>..HEAD) and from every
 Touches: item of its tasks not done (its scope, and its claims in flight), a folder ending in / colliding with what is
 inside it and a module doc (docs/modulos/NN-*.md) with nothing, since the manager merges it on integrating; a task with no Touches: line is refused, and so is each collision, naming it. The run stays in the
 preparation and goes with it into the promotion; its own status is never ready for the gate and leaves leftovers and
@@ -1403,7 +1405,8 @@ def qa_report(args, entries):
     said = found["Verdict"].split()[0].strip("*_`.,;:!") if found["Verdict"] else ""
     if said.upper() != args.verdict:
         sys.exit(f"{args.report} says Verdict: {said or '(nothing)'}, not {args.verdict}")
-    ports = re.search(r"(?i)\bports:\s*(none\b|\d[\d,\s]*)", found["Processes"])
+    ports = re.search(r"(?i)\bports:\s*(none\b|\d[\d,\s]*)", found["Processes"]) or re.search(
+        r"(?im)^[ \t>*_-]*processes[*_]*:.*\n[ \t>*_-]*ports[*_]*:[*_]*[ \t]*(none\b|\d[\d, \t]*)", text)
     if not ports:
         sys.exit(f"{args.report} gives no ports: in its Processes: line: qa names each port it started a server on, "
                  "or ports: none")
@@ -1542,9 +1545,10 @@ def leftovers(entries, ledger, head, testing=False):
 
 
 def touch_items(line):
-    """The items of a Touches: line: each `quoted` path, then each other comma- or semicolon-separated item."""
+    """The items of a Touches: line: each `quoted` path, then each other comma- or semicolon-separated item; a note in
+    parentheses after a space ("(novo)") is no item, while parentheses inside a path stay."""
     quoted = re.findall(r"`([^`]+)`", line or "")
-    rest = re.sub(r"`[^`]+`", "", line or "")
+    rest = re.sub(r"(^|\s)\([^)]*\)", " ", re.sub(r"`[^`]+`", "", line or ""))
     items = quoted + [part.strip(" .") for part in re.split(r"[,;]", rest)]
     return [item.strip().removeprefix("./") for item in items if item.strip(" .")]
 
@@ -1559,7 +1563,11 @@ def overlaps(one, other):
 
 def collisions(args, entries):
     """Why a task of a delivery in preparation collides with the current delivery beside it: [text], empty when not."""
-    touches = touch_items(plan_field(plan_text(entries, args.ledger), args.task, "Touches"))
+    text = plan_text(entries, args.ledger)
+    if not text:
+        sys.exit("the plan of this preparation is not found from here, the ledger's root or its worktree: give "
+                 "plan --path its absolute path")
+    touches = touch_items(plan_field(text, args.task, "Touches"))
     if not touches:
         sys.exit(f"{args.task} has no Touches: line in the plan, so nothing says it does not collide with the current "
                  "delivery: it waits for the promotion")
@@ -1865,8 +1873,9 @@ def later_cycle(entries, cycle, task):
 
 def plan_text(entries, ledger):
     plans = [entry["plan"] for entry in entries if entry["type"] == "plan"] or [entries[0].get("plan")]
-    root = os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
-    for path in ([plans[-1], os.path.join(root, plans[-1])] if plans[-1] else []):
+    roots = [entries[0]["worktree"]] if entries[0].get("worktree") else []  # a preparation's plan lives in its tree
+    roots.append(os.path.dirname(os.path.dirname(os.path.abspath(ledger))))
+    for path in ([plans[-1]] + [os.path.join(root, plans[-1]) for root in roots] if plans[-1] else []):
         try:
             return open(path, encoding="utf-8").read()
         except OSError:
