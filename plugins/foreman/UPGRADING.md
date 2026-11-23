@@ -4,6 +4,14 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.15.0 — contorno do projeto removido na atualização
+
+PR #22.
+
+- **A atualização procura o contorno que o conserto tornou desnecessário** (melhoria, decisão do dono): um projeto resolve um atrito por conta própria antes de o plugin consertá-lo, com uma lição, uma linha no `CLAUDE.md` ou um passo que o manager repete, e depois do conserto esse contorno ficava como regra morta. O "Ao atualizar" de cada versão passa a nomear o contorno, e a skill `atualizar` o procura no projeto e propõe removê-lo na mesma lista das decisões; nada sai sem o sim do dono. O prompt da `atualizar` cresceu cerca de 40 palavras: é comportamento novo, e nenhuma frase dela ficou redundante. Número: contornos de versões já entregues ainda presentes nos projetos (meta 0).
+
+**Ao atualizar:** nada muda.
+
 ## 1.14.3 — `claim` e `add` do `qa` sem atrito de formato
 
 PR #21.
@@ -12,7 +20,7 @@ PR #21.
 - **O plano de uma preparação é lido na worktree dela** (defeito): com `plan --path` relativo numa entrega em preparação (`start --next --worktree`), o `claim` procurava o plano só na worktree principal e respondia que a tarefa não tinha linha `Touches:`, quando o arquivo é que não foi achado. Agora o caminho relativo é procurado também na worktree registrada, e, sem plano achado, o `claim` diz isso e pede o caminho absoluto.
 - **`ports:` na linha logo abaixo de `Processes:`** (melhoria): o `add` do `qa` recusava o relatório que trazia as portas na linha seguinte, e o manager de um projeto do autor teve de editar uma cópia à mão. A informação está lá; o `add` passa a lê-la, e a porta que ainda aceita conexão continua barrando.
 
-**Ao atualizar:** nada muda.
+**Ao atualizar:** nada quebra. Contornos que saem, se o projeto os tiver: o caminho absoluto no `plan --path` de uma preparação; a regra de evitar nota entre parênteses no `Touches:`; a regra de escrever `ports:` na mesma linha de `Processes:`, ou de editar à mão a cópia do relatório do `qa` antes do `add`.
 
 ## 1.14.2 — dois-pontos no parêntese do rótulo
 
