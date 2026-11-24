@@ -474,7 +474,8 @@ for command in ("git init", "git init proj2",
                 "sh C:/p/plugins/foreman/hooks/python.sh C:/p/plugins/foreman/hooks/pre-commit-secret-scan.py --install-pre-commit"):
     check(f"AC_T5_3 a hub session cannot start a kickoff: {command!r}", hub_denied(command),
           str(run(hub_root, command, session="h2")))
-WRITES = ("delegate --projeto proj", "add --nome a --pasta C:/a", "set --bg on", "remove --projeto a", "init")
+WRITES = ("delegate --projeto proj", "add --nome a --pasta C:/a", "set --bg on", "remove --projeto a", "init",
+          "liberar --projeto proj")
 for sub_command in WRITES:
     command = f"{PY}/hub/hub.py {sub_command}"
     check(f"AC_T5_4 a former hub session cannot write the registry: {sub_command!r}",

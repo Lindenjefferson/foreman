@@ -39,7 +39,9 @@ Commands
   lesson  --text <rule> [--check <test or lint rule>]         a lesson, automated when --check names the check
   status  [--json] [--check] [--tick]                         the current cycle, what it still needs, and metrics
   gate    --verdict READY|NOT_READY [--failed <check,...>]    a gate run's verdict (gate.py records it)
-  capacity [--json]                                           free memory and disk, and the parallel copies that fit
+  capacity [--json] [--rotulo <label> ...] [--esperar]       free memory and disk, the parallel copies that fit, and
+                                                              the machine's memory reservation of each labelled copy
+  liberar --rotulo <label>                                    frees this project's memory reservation of that label
 
 Claims, leftover copies and pauses
 ----------------------------------
@@ -393,7 +395,19 @@ replaced a measure.
 copies is the largest n with free - n*peak >= max(peak, floor), so one more copy and the floor stay free (null when
 the peak or the memory is unknown); dispatch is false below the floor. It needs no delivery, exits 1 when dispatch is
 false, and --json gives memory_free_gb, disk_free_gb, peak_gb, disk_peak_gb, floor_gb, heavy_limit, autonomous,
-dispatch, copies and reason.
+dispatch, copies, reason, reserved and others_gb.
+
+Between the projects of the machine (memoria.py, beside this script, owns the file, its lock and its rules): capacity
+takes the other projects' reservations off the free memory (others_gb). With --rotulo, one per copy (a dev task id,
+qa, or manager:<task> for the suite the manager runs itself), it reserves the peak (the floor while the peak is
+unknown) of each label that fits, in order, and gives them in reserved; copies is then their count, and with none it
+exits 1, naming who holds the memory or which request of a higher priority goes first. --esperar keeps trying (every
+FOREMAN_MEMORIA_INTERVALO seconds, 30 by default) in turn, until a label is reserved (exit 0) or the ceiling
+(FOREMAN_MEMORIA_TETO, 7200 s) passes (exit 1, its request withdrawn). With the floor or the memory unknown, or a
+memory file that cannot be read (named in the reason, never overwritten), capacity decides alone, as with no label.
+A successful add of a dev run or a release frees its task's reservation, an add of a qa run frees qa, and liberar
+frees any label. Every command renews the project's reservations, unless FOREMAN_MEMORIA_LEITURA is set (the hub's
+read), so one a dead session left expires.
 
 Free disk
 ---------
@@ -422,6 +436,9 @@ import subprocess
 import sys
 import time
 import unicodedata
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import memoria  # noqa: E402  the machine's memory reservations, shared with hub.py
 
 VERDICTS = {
     "discovery": {"DONE", "NEEDS_CONTEXT", "BLOCKED"},
@@ -2634,14 +2651,9 @@ def fit(free, peak, reserve):
     return max(0, int((free - reserve) / peak + 1e-9)) if peak > 0 else None
 
 
-def capacity(args):
-    entries = read(args.ledger)
-    root = os.path.dirname(os.path.dirname(os.path.abspath(args.ledger)))
-    memory = probed("FOREMAN_CAPACITY_MEMORY_GB", free_memory_gb)
-    disk = probed("FOREMAN_CAPACITY_DISK_GB", lambda: shutil.disk_usage(root).free / 1024 ** 3)
-    setting = capacity_settings(os.path.join(root, "CLAUDE.local.md"))
+def sizing(memory, disk, setting, free_mode):
+    """(dispatch, copies, notes, reason) for that free memory, as capacity decides it."""
     peak, disk_peak, floor, heavy = setting["peak"], setting["disk_peak"], setting["floor"], setting["heavy"]
-    free_mode = autonomous(entries)
     dispatch = None if memory is None or floor is None else memory >= floor
     copies, notes = None, []
     if memory is not None and "FOREMAN_CAPACITY_MEMORY_GB" in os.environ:
@@ -2666,18 +2678,90 @@ def capacity(args):
     else:
         shown = "no parallel copy; one dispatch fits" if not copies else f"{copies} parallel cop{'y' if copies == 1 else 'ies'} fit"
         reason = f"{memory:.1f} GB free, floor {floor:g}, peak {peak:g}: {shown}"
+    return dispatch, copies, notes, reason
+
+
+def capacity(args):
+    entries = read(args.ledger)
+    root = project_root(args.ledger)
+    setting = capacity_settings(os.path.join(root, "CLAUDE.local.md"))
+    free_mode = autonomous(entries)
+    projeto, nome = memoria.key(root), os.path.basename(root)
+    if args.esperar and not args.rotulo:
+        sys.exit("--esperar takes --rotulo, the label of each job it reserves for")
+
+    def measure():
+        return (probed("FOREMAN_CAPACITY_MEMORY_GB", free_memory_gb),
+                probed("FOREMAN_CAPACITY_DISK_GB", lambda: shutil.disk_usage(root).free / 1024 ** 3))
+
+    def fits(free):
+        dispatch, copies, _, _ = sizing(free, disk, setting, free_mode)
+        return max(copies or 0, 1) if dispatch else 0
+
+    memory, disk = measure()
+    granted, shared = None, None
+    try:
+        others = memoria.others(memoria.load(), projeto)
+    except (memoria.Corrupt, OSError):
+        others, shared = 0, f"{memoria.path()} unreadable: other projects' reservations not counted; fix or delete it"
+    mediated = bool(args.rotulo) and memory is not None and setting["floor"] is not None and not shared
+    if mediated:
+        gb = setting["peak"] or setting["floor"]
+        end = time.time() + float(os.environ.get("FOREMAN_MEMORIA_TETO") or 7200)
+        while True:
+            try:
+                granted, shared, impossible = memoria.reserve(projeto, nome, args.rotulo, gb, memory, fits,
+                                                              esperando=args.esperar)
+            except memoria.Busy as busy:
+                granted, shared, impossible = [], f"{busy} stayed held", False
+            if granted or impossible or not args.esperar or time.time() >= end:
+                break
+            time.sleep(float(os.environ.get("FOREMAN_MEMORIA_INTERVALO") or 30))
+            memory, disk = measure()
+        if args.esperar and not granted:
+            memoria.withdraw(projeto)
+        dispatch, _, notes, reason = sizing(memory, disk, setting, free_mode)
+        dispatch, copies = bool(granted), len(granted)
+    else:
+        dispatch, copies, notes, reason = sizing(None if memory is None else memory - others, disk, setting, free_mode)
+        if others:
+            notes.append(f"other projects reserve {others:g} GB, taken off the free memory")
+    if shared:
+        notes.append(shared)
     if notes:
         reason += f" ({'; '.join(notes)})"
-    report = {"memory_free_gb": memory, "disk_free_gb": disk, "peak_gb": peak, "disk_peak_gb": disk_peak,
-              "floor_gb": floor, "heavy_limit": heavy, "autonomous": free_mode, "dispatch": dispatch,
-              "copies": copies, "reason": reason}
+    report = {"memory_free_gb": memory, "disk_free_gb": disk, "peak_gb": setting["peak"],
+              "disk_peak_gb": setting["disk_peak"], "floor_gb": setting["floor"], "heavy_limit": setting["heavy"],
+              "autonomous": free_mode, "dispatch": dispatch, "copies": copies, "reason": reason,
+              "reserved": granted, "others_gb": others}
     if args.json:
         print(json.dumps(report, ensure_ascii=False))
     else:
         label = {True: "yes", False: "no", None: "unknown"}[dispatch]
-        print(f"capacity: dispatch {label}, copies {'unknown' if copies is None else copies}; {reason}")
+        held = (f"reserved {', '.join(granted)}; " if granted else "reserved none; ") if mediated else ""
+        print(f"capacity: dispatch {label}, copies {'unknown' if copies is None else copies}; {held}{reason}")
     if dispatch is False:
         sys.exit(1)
+
+
+def project_root(ledger):
+    return os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
+
+
+def liberar(args):
+    count = memoria.release(memoria.key(project_root(args.ledger)), args.rotulo)
+    print(f"released {count} reservation{'' if count == 1 else 's'} {args.rotulo}")
+
+
+def freed_label(args):
+    """The reservation a successful command frees: a dev run or a release frees its task, a qa run frees qa."""
+    if args.command == "release":
+        return args.task
+    if args.command == "add" and args.agent == "dev":
+        return args.task or None
+    if args.command == "add" and args.agent == "qa" and not args.task:
+        return "qa"
+    return None
 
 
 def disk_watch(entries, ledger, held):
@@ -2831,7 +2915,13 @@ def main():
     command.set_defaults(run=lesson)
     command = commands.add_parser("capacity")
     command.add_argument("--json", action="store_true")
+    command.add_argument("--rotulo", action="append", default=[],
+                         help="reserve the peak for this job (a task id, qa, manager:<task>); repeat per copy")
+    command.add_argument("--esperar", action="store_true", help="with --rotulo: wait for the reservation, in turn")
     command.set_defaults(run=capacity)
+    command = commands.add_parser("liberar")
+    command.add_argument("--rotulo", required=True)
+    command.set_defaults(run=liberar)
     command = commands.add_parser("status")
     command.add_argument("--json", action="store_true")
     command.add_argument("--check", action="store_true")
@@ -2846,7 +2936,17 @@ def main():
     global NEEDS_INTERFACE
     NEEDS_INTERFACE = interface_line(args.ledger)
     preparation_only(args)
+    projeto = memoria.key(project_root(args.ledger))
+    if not os.environ.get("FOREMAN_MEMORIA_LEITURA"):  # the hub's read leaves a dead session's reservation to expire
+        memoria.renew(projeto)
     args.run(args)
+    label = freed_label(args)
+    if label:
+        try:
+            memoria.release(projeto, label)
+        except (memoria.Busy, memoria.Corrupt, OSError) as problem:
+            print(f"memory reservation {label} not released ({problem}): ledger.py liberar --rotulo {label}",
+                  file=sys.stderr)
 
 
 if __name__ == "__main__":
