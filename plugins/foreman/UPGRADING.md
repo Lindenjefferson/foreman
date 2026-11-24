@@ -4,6 +4,13 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.2 — `qa` com várias cópias e entrega numa worktree
+
+- **O `add` de um `qa` libera todas as reservas das cópias dele** (defeito): os dois projetos do autor rotularam as cópias do `qa` como `qa-ciclo6` e `qa-full-1` a `qa-full-api`, e o `add` só liberava o rótulo `qa`; a reserva de um `qa` já terminado seguia renovada pelos comandos do projeto, segurando 4 GB do outro. Agora o `add` do `qa` libera `qa`, `qa-<n>` e `qa:<n>`, menos um rótulo que seja id de tarefa do ledger. Número: reservas de `qa` vivas depois do `add` dele (meta 0).
+- **O `add --full` confere a entrega na worktree de onde é chamado** (defeito): num projeto do autor, a branch da entrega mora numa worktree e o ledger na pasta principal; o `add --full`, rodado na worktree da entrega, conferia o Reviewed e a Version na pasta principal (na `main`) e recusava a suíte inteira com "reviewed head ... is not in this history". Agora as duas checagens leem a worktree onde o comando roda quando o ledger é o da pasta principal e ela é do mesmo repositório e não é a worktree de uma tarefa; o ledger de uma frente segue lido na frente.
+
+**Ao atualizar:** nada muda. Contornos que saem, se a sessão os tiver: rodar `liberar` para cada cópia do `qa`, ou usar só o rótulo `qa` puro; registrar a suíte inteira sem `--full`, com uma nota, quando a entrega mora numa worktree (rode o `add --full` e o `gate.py` de dentro da worktree da entrega).
+
 ## 1.16.1 — fila de memória por rótulo e revisão antes do add
 
 - **Um projeto que segura uma reserva espera a vez para um trabalho novo** (defeito): o conserto do travamento na 1.16.0 isentava da fila todo projeto que já segurava qualquer reserva, então um app do autor, segurando a do `qa`, reservaria cópias novas à frente do pedido de um projeto de prioridade maior. A isenção vale agora só para a `manager:<tarefa>` de uma tarefa que o projeto já segura, a suíte que confere o relatório dela, porque sem ela a tarefa nunca liberaria a memória. Número: reservas novas concedidas com um pedido de prioridade maior na fila (meta 0). A decisão é rótulo por rótulo: num pedido misto, a `manager:<tarefa>` sai na hora e o trabalho novo segue na fila, sem perder o lugar.

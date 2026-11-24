@@ -94,8 +94,10 @@ none open, the next cycle needs it), and no cycle needs it once a qa ran it.
 The full suite runs once per delivery, at its final head (manager step 6), after what changes that head: once the
 plan has no task left (or with no scope), status gives full_qa_blockers, each missing item (the reviewer's PASS
 after the latest dev run, a waiver included; a commit after its head that the gate's Reviewed check asks a review
-for, the plan and docs/lessons.md exempt as there; the version, as the gate's Version check reads the Versão line at
-the ledger's root against the base; with a plan, the cleanup task, or a note that names cleanup; each deferred item
+for, the plan and docs/lessons.md exempt as there; the version, as the gate's Version check reads the Versão line
+against the base; both read the worktree the command runs in when the ledger is the main worktree's and that worktree is
+of the same repository and no task's or preparation's worktree (the delivery branch may live there), else the
+ledger's root; with a plan, the cleanup task, or a note that names cleanup; each deferred item
 with no decision, which the printed line leaves out since status lists them), and add --full is refused, at any
 point, while any is missing. A ledger whose last cycle ran qa --full under an earlier version still reads: that run
 is full_qa, as any other.
@@ -405,7 +407,8 @@ exits 1, naming who holds the memory or which request of a higher priority goes 
 FOREMAN_MEMORIA_INTERVALO seconds, 30 by default) in turn, until a label is reserved (exit 0) or the ceiling
 (FOREMAN_MEMORIA_TETO, 7200 s) passes (exit 1, its request withdrawn). With the floor or the memory unknown, or a
 memory file that cannot be read (named in the reason, never overwritten), capacity decides alone, as with no label.
-A successful add of a dev run or a release frees its task's reservation, an add of a qa run frees qa, and liberar
+A successful add of a dev run or a release frees its task's reservation, an add of a qa run frees qa and every
+qa-<n> or qa:<n> of its copies (not a label that is a task id of the ledger), and liberar
 frees any label. A label is 1 to 60 of A-Z a-z 0-9 . _ : -. Every command but status --json (the mod's and the
 hub's read) renews the project's reservations, so one a dead session left expires. The project is the repository's
 main worktree, so a front's ledger in a worktree reserves and frees as the same project.
@@ -1292,6 +1295,23 @@ def heartbeat(entries, auto):
     return {"minutes": minutes, "since": marks[-1]} if minutes > HEARTBEAT_MINUTES else None
 
 
+def delivery_tree(ledger, entries):
+    """Where the gate's checks read the delivery: the worktree the command runs in, when the ledger is the main
+    worktree's, that worktree is of the same repository and it is no task's or preparation's worktree (the delivery
+    branch may live in a worktree of its own); else the ledger's root, a front's own worktree included."""
+    root = project_root(ledger)
+    top = git_ok(None, "rev-parse", "--show-toplevel")
+    if not top or memoria.key(root) != memoria_key(ledger):
+        return root
+    common = git_ok(top, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    others = {memoria.key(entry["worktree"]) for entry in entries if entry.get("worktree")}
+    for _, prepared in queued(ledger):  # a preparation's worktree and its claims' live in next-<slug>.jsonl
+        others |= {memoria.key(item["worktree"]) for item in prepared if item.get("worktree")}
+    if common and memoria.key(os.path.dirname(common)) == memoria_key(ledger) and memoria.key(top) not in others:
+        return top
+    return root
+
+
 def full_qa_blockers(entries, ledger):
     """What must come before the delivery's only full qa run, at its final head, so the full suite runs once: the
     reviewer's PASS after the latest dev run, with no commit after its head that the gate's Reviewed check would ask a
@@ -1310,7 +1330,7 @@ def full_qa_blockers(entries, ledger):
         "foreman_gate", os.path.join(os.path.dirname(os.path.abspath(__file__)), "gate.py"))
     gate = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gate)
-    root = os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
+    root = delivery_tree(ledger, entries)
     base = entries[0].get("base")
     plans = [entry["plan"] for entry in entries if entry["type"] == "plan"]
     here = os.getcwd()
@@ -2974,7 +2994,8 @@ def main():
     label = freed_label(args)
     if label and shared:
         try:
-            memoria.release(memoria_key(args.ledger), label)
+            tasks = {entry.get("task") for entry in read(args.ledger) if entry.get("task")} if label == "qa" else ()
+            memoria.release(memoria_key(args.ledger), label, family=memoria.QA if label == "qa" else None, keep=tasks)
         except (memoria.Busy, memoria.Corrupt, OSError) as problem:
             print(f"memory reservation {label} not released ({problem}): ledger.py liberar --rotulo {label}",
                   file=sys.stderr)
