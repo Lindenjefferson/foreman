@@ -18,9 +18,10 @@ reservations whole (shortcut: a running job's memory is then counted twice, in t
 reservation, so a project waits longer than needed, never crashes another; upgrade to discounting what is already in
 use if the waits weigh on the deliveries' clock). A project's own reservations are not subtracted: the free memory
 already shows its running copies. A request of another project with a higher priority, or the same priority and an
-older desde, makes this one wait even when memory fits, unless every label it asks is manager:<task> of a task it already holds:
-the suite that checks a held task's report finishes that task, or it would never free what the other waits for. A
-new job of a project that holds memory waits its turn like any other. A request that would not fit even with every other
+older desde, makes this one wait even when memory fits, except for a label manager:<task> of a task it already holds (decided
+label by label): the suite that checks a held task's report finishes that task, or it would never free what the other
+waits for, and granting it keeps the project's place in the queue. A new job of a project that holds memory waits its
+turn like any other. A request that would not fit even with every other
 reservation released is refused at once and never queued. Only a waiting caller (esperando) writes or drops the
 project's request; a grant drops it.
 
@@ -213,12 +214,25 @@ def reserve(projeto, nome, rotulos, gb, free, fits, esperando=False):
             return [], (f"{free:.1f} GB free and {reserved:g} GB reserved by other projects: one copy would not fit "
                         "even with them released"), True
         held = {r.get("rotulo") for r in d["reservas"] if r.get("projeto") == projeto}
-        finishing = all(r.startswith("manager:") and r[len("manager:"):] in held for r in rotulos)
-        ahead = [] if finishing else [p for p in d["pedidos"] if p.get("projeto") != projeto and (
+
+        def finishing(label):  # manager:<task> of a task this project holds: the suite that lets it free the task
+            task = label[len("manager:"):]
+            return label.startswith("manager:") and ":" not in task and task in held
+
+        done = [r for r in rotulos if finishing(r)]
+        new = [r for r in rotulos if not finishing(r)]
+        ahead = [p for p in d["pedidos"] if p.get("projeto") != projeto and (
             priority(d, p.get("projeto")) > mine or priority(d, p.get("projeto")) == mine and str(p.get("desde")) < since)]
-        granted = [] if ahead else list(rotulos)[:max(0, fits(free - reserved))]
+        room = max(0, fits(free - reserved))
+        granted = done[:room]
+        if not ahead:
+            granted += new[:room - len(granted)]
         if granted:
-            d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
+            if any(r in new for r in granted):  # the project's turn came: its request is answered
+                d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
+            elif esperando and new:  # only the finishing labels: the new jobs keep their place
+                d["pedidos"].append({"projeto": projeto, "nome": nome, "gb": gb, "copias": len(new), "desde": since,
+                                     "renovado": iso(at)})
             d["reservas"] = [r for r in d["reservas"] if not (r.get("projeto") == projeto and r.get("rotulo") in granted)]
             d["reservas"] += [{"projeto": projeto, "nome": nome, "rotulo": r, "gb": gb, "desde": iso(at),
                                "renovada": iso(at)} for r in granted]

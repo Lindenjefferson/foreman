@@ -3275,5 +3275,30 @@ check("liberar on an unreadable file is a message, not a traceback", r.returncod
       and "unreadable" in r.stderr, r.stderr)
 os.remove(MEM_FILE)
 
+# night 1: the round a review add reports, and a review over the dev's own tip recorded before the dev's add
+night = tempfile.mkdtemp(prefix="night_")
+atexit.register(shutil.rmtree, night, True)
+night_ledger = os.path.join(night, ".superpowers", "ledger.jsonl")
+os.makedirs(os.path.dirname(night_ledger))
+with open(night_ledger, "w", encoding="utf-8") as handle:
+    for entry in ({"type": "start", "slug": "n", "base": head()},
+                  {"type": "run", "agent": "reviewer", "task": "spec", "verdict": "FAIL", "open": 3, "critical": 0,
+                   "important": 3, "minor": 0, "origin": {"design": 3}, "head": head(), "at": "2030-01-01T00:00:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+r = run("add", "--agent", "reviewer", "--task", "spec", "--verdict", "PASS", ledger=night_ledger)
+check("the PASS that closes a review loop reports its own round, not 0", "(round 2)" in r.stdout, (r.stdout, r.stderr))
+tip_ledger = os.path.join(night, "tip.jsonl")
+with open(tip_ledger, "w", encoding="utf-8") as handle:
+    for entry in ({"type": "start", "slug": "t", "base": head()},
+                  {"type": "run", "agent": "reviewer", "task": "", "verdict": "PASS", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": "7aba353c9e3daae130958b0c0706c59a313cbbb9",
+                   "at": "2030-01-01T00:01:00+00:00"},
+                  {"type": "run", "agent": "dev", "task": "fix-4", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": head(),
+                   "tip": "7aba353c9e3daae130958b0c0706c59a313cbbb9", "at": "2030-01-01T00:02:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+check("a review of the dev's own tip, recorded before the dev's add, still counts",
+      "reviewer has not reviewed the latest changes" not in status(tip_ledger)["pending"], status(tip_ledger)["pending"])
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

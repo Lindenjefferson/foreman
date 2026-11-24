@@ -761,7 +761,10 @@ def cycle_state(cycle, autonomous=False, extended=None, interface=False):
         need("no dev task yet", "dev")
     if pending:
         return state, pending
-    if last_review < last_dev:
+    # A review of the dev's own tip, added before the dev's add (its suite was still running), covers that run.
+    # shortcut: equality only; a review of a later commit that contains the tip still asks again, upgrade with git.
+    if last_review < last_dev and not (reviews and cycle[last_dev].get("tip")
+                                       and reviews[-1].get("head") == cycle[last_dev]["tip"]):
         need("reviewer has not reviewed the latest changes", "reviewer")
     elif reviews[-1]["verdict"] == "FAIL":
         need(f"reviewer FAIL ({reviews[-1]['open']} open{where(reviews[-1])}): dev fixes every finding in one batch",
@@ -1250,9 +1253,11 @@ def add(args):
     if NEEDS_INTERFACE and entries[0].get("interface") is False and not any(
             item["type"] == "interface" for item in entries):
         write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
+    # this run's round: the loop before it plus itself (after a PASS the loop is empty again)
+    round_number = len(review_loop(read(args.ledger), args.task)) + 1 if is_review(entry) else None
     write(args.ledger, entry)
     label = f"{args.agent}{' ' + args.task if args.task else ''}: {args.verdict}"
-    print(f"{label} (round {len(review_loop(read(args.ledger), args.task))})" if is_review(entry)
+    print(f"{label} (round {round_number})" if is_review(entry)
           else f"{label} (held for plan cycle {later}: integrate it once this cycle closes)" if later
           else f"{label} (cycle {len(cycles(read(args.ledger)))})")
 

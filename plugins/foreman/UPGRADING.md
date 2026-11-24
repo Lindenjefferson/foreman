@@ -4,11 +4,13 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
-## 1.16.1 — quem segura memória não fura a fila
+## 1.16.1 — fila de memória por rótulo e revisão antes do add
 
-- **Um projeto que segura uma reserva espera a vez para um trabalho novo** (defeito): o conserto do travamento na 1.16.0 isentava da fila todo projeto que já segurava qualquer reserva, então um app do autor, segurando a do `qa`, reservaria cópias novas à frente do pedido de um projeto de prioridade maior. A isenção vale agora só para a `manager:<tarefa>` de uma tarefa que o projeto já segura, a suíte que confere o relatório dela, porque sem ela a tarefa nunca liberaria a memória. Número: reservas novas concedidas com um pedido de prioridade maior na fila (meta 0).
+- **Um projeto que segura uma reserva espera a vez para um trabalho novo** (defeito): o conserto do travamento na 1.16.0 isentava da fila todo projeto que já segurava qualquer reserva, então um app do autor, segurando a do `qa`, reservaria cópias novas à frente do pedido de um projeto de prioridade maior. A isenção vale agora só para a `manager:<tarefa>` de uma tarefa que o projeto já segura, a suíte que confere o relatório dela, porque sem ela a tarefa nunca liberaria a memória. Número: reservas novas concedidas com um pedido de prioridade maior na fila (meta 0). A decisão é rótulo por rótulo: num pedido misto, a `manager:<tarefa>` sai na hora e o trabalho novo segue na fila, sem perder o lugar.
+- **A revisão do próprio commit do dev, gravada antes do `add` dele, vale** (defeito): num app do autor, o `reviewer` revisou o range da worktree da `fix-4` e foi gravado enquanto a suíte ainda conferia o commit; depois do `add` do dev, o `status` pediu a revisão de novo, e o registro repetido caiu no ciclo seguinte como revisão de outra tarefa. Agora a revisão cujo head é o `tip` da última run do dev conta para ela.
+- **O `add` de uma revisão diz a rodada certa** (defeito): o PASS que fecha o laço da spec ou do plano dizia "round 0", porque a conta recomeça depois de um PASS; agora diz a rodada dele.
 
-**Ao atualizar:** nada muda. Contorno que sai, se a sessão o tiver: ler os "pedidos" do `memoria.json` antes de cada `capacity --rotulo` e não reservar nada novo com um pedido de outro projeto na fila.
+**Ao atualizar:** nada muda. Contornos que saem, se a sessão os tiver: gravar a revisão do `reviewer` de novo depois do `add` do dev só para a ordem do ledger; ler os "pedidos" do `memoria.json` antes de cada `capacity --rotulo` e não reservar nada novo com um pedido de outro projeto na fila.
 
 ## 1.16.0 — memória mediada entre os projetos da máquina
 

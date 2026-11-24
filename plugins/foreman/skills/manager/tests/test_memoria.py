@@ -111,6 +111,18 @@ got, reason, _ = memoria.reserve("h", "H", ["t2"], 4, 20, one_per(4, 4))
 check("a holder asking for a new job waits behind a higher priority", got == [] and "waits for W" in reason, reason)
 got, _, _ = memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4))
 check("a holder finishing a job it holds (manager:<task>) is not queued", got == ["manager:t1"], got)
+memoria.release("h", "manager:t1")
+got, _, _ = memoria.reserve("h", "H", ["manager:t1", "t2"], 4, 20, one_per(4, 4), esperando=True)
+check("a mixed call gets the finishing label and leaves the new job waiting", got == ["manager:t1"], got)
+memoria.release("h", "manager:t1")
+memoria.reserve("h", "H", ["t3"], 4, 20, one_per(4, 4), esperando=True)  # H queues behind W
+mine = [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"]
+memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4))
+check("a finishing grant keeps the project's place in the queue",
+      [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"] == mine and mine, memoria.load()["pedidos"])
+memoria.release("h", "manager:t1")
+got, _, _ = memoria.reserve("h", "H", ["manager:manager:t1"], 4, 20, one_per(4, 4))
+check("a chained manager: label is not a finishing one", got == [], got)
 
 shutil.rmtree(folder, True)
 print("ALL PASS" if all(results) else "SOME FAILED")
