@@ -85,7 +85,7 @@ pre-commit-secret-scan.py --install-pre-commit (the first writing steps of a kic
 as the program, as the script of python, py, sh or bash (also through python.sh and behind uv, poetry, pipenv, hatch
 or pdm run), or as python -m <name>; reading
 its file (cat, grep, ls) passes. The reason reads "hub session: <step> belongs to the project's session". A hub
-session that is not the "dono" is denied hub.py delegate, add, set, remove and init ("another hub session took over
+session that is not the "dono" is denied hub.py delegate, add, set, remove, liberar and init ("another hub session took over
 this root"); status and abrir pass. In any session, those writing commands are denied when the root they name
 (--raiz, else the session's directory) has a valid hub.json whose dono is another session (no session_id included);
 a registry with no dono yet (fresh from init) is written by any session, and the next SessionStart claims it.
@@ -808,8 +808,8 @@ def hub_session(cwd, session_id):
         folder = os.path.dirname(folder)
 
 
-HUB_COMMANDS = {"init", "status", "add", "set", "remove", "delegate", "abrir", "claim"}
-HUB_WRITES = {"delegate", "add", "set", "remove", "init"}
+HUB_COMMANDS = {"init", "status", "add", "set", "remove", "delegate", "abrir", "claim", "liberar"}
+HUB_WRITES = {"delegate", "add", "set", "remove", "init", "liberar"}
 GIT_READS = {"status", "log", "diff", "show", "rev-parse", "ls-files", "describe", "shortlog", "blame", "grep",
              "cat-file", "for-each-ref", "merge-base", "name-rev", "rev-list", "ls-tree", "show-ref", "ls-remote",
              "help", "version", ""}

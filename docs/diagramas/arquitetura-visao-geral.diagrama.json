@@ -1095,7 +1095,7 @@
       "items": [
         "atualizar aplica as notas do UPGRADING.md",
         "validar, feedback-plugin e anonimizar fecham e revisam a entrega",
-        "hub repassa pedidos a vários projetos e mostra o que espera o dono"
+        "hub repassa pedidos a vários projetos, mostra o que espera o dono e a vez de cada um na memória da máquina"
       ]
     }
   ]

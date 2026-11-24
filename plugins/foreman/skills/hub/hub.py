@@ -10,6 +10,8 @@ Commands
   set     [--projeto <n>] [--conta <c>] [--abrir <cmd>] [--bg on|off]
                                                               without --projeto: the global abrir and bg
   remove  --projeto <n>                                       drops a registry entry
+  set     --projeto <n> --prioridade <N>                      the project's memory priority (higher goes first)
+  liberar --projeto <n> [--rotulo <r>]                        frees a memory reservation that a dead session left
   set     --projeto <n> --estado respondido                   the owner saw the project answer
   delegate --projeto <n> [--nao-entregue]                     stores the request (text on stdin, first 200 chars)
   abrir   --projeto <n> [--mostrar]                           opens the project's session; --mostrar only prints
@@ -45,7 +47,15 @@ Rules
   {"abrir": null, "bg": null, "projetos": {"<name>": {"pasta": "<absolute>", "conta": null, "abrir": null}}}
   "abrir" is a command with {pasta}, {nome} and {conta}; "conta" is a free label. "bg" null means unset. set on a scanned project
   keeps it "varredura" and stores only what it sets. A registry that is not a JSON object: exit 2, untouched.
-- Never writes inside a project folder; the only file written is the registry.
+- Never writes inside a project folder; the only files written are the registry and, by set --prioridade and
+  liberar, the machine's memory file (memoria.py, beside ledger.py, owns its format, lock and expiry).
+
+Memory: status reads the memory file and lists, under "memoria", its live reservations and waiting requests, and the
+priorities ("memory:" lines in the text); a file that cannot be read is the warning "memoria unreadable: <path>".
+set --prioridade and liberar address a project by name and write it by its folder, as ledger.py keys it (memoria.key),
+so a project outside the root needs add first. ledger.py status --json never renews a reservation, so the hub's read
+leaves one that a dead session left to expire after 2 h, or the owner frees it with liberar. Text from the memory file
+(names, labels, times) is cleaned like a project's.
 
 delegate refuses an unknown project, a missing folder and a half update, then stores {"texto", "em"} and the estado
 "enviado" ("nao-entregue" with the flag); the text is only stored, never run. status derives "sem-resposta" (and
@@ -66,7 +76,7 @@ over; a lock is only ever removed by the token that wrote or read it). "bg" in s
 Errors (code, exit): unknown-project 1 (lists the names), missing-folder 1, is-project 1 (any command but status, in a
 folder with .superpowers/ledger.jsonl), exists 1 (name taken, or the folder is the root or already named), bad-name 1, usage 1 (also a bad
 argument or a --raiz that is not a folder), open-failed 1, half-update 1, busy 1 (hub.lock stayed held for 10 s; the message names the file,
-which can be deleted when no hub command is running), bad-registry 2 (nothing was overwritten).
+which can be deleted when no hub command is running), bad-memory 1 (the memory file is not valid; nothing was overwritten), bad-registry 2 (nothing was overwritten).
 """
 import argparse, contextlib, datetime, json, math, os, re, shlex, shutil, subprocess, sys, tempfile, time
 
@@ -76,6 +86,8 @@ LEDGER = os.path.join(PLUGIN, "skills", "manager", "ledger.py")
 OPEN_TIMEOUT = 60  # seconds for an opener to return the terminal
 TIMEOUT = 30  # seconds per ledger.py call, so one slow project cannot hang the status
 INSTALL = "claude plugin install foreman@foreman --scope local"
+sys.path.insert(0, os.path.join(PLUGIN, "skills", "manager"))
+import memoria  # noqa: E402  the machine's memory reservations, shared with ledger.py
 
 
 class Refuse(Exception):
@@ -155,54 +167,24 @@ def save(raiz, dados):
         raise
 
 
-def drop(path, token):
-    """Removes the lock file only while it still holds token: a taken-over lock is never deleted by its old owner."""
-    token = token.encode("utf-8") if isinstance(token, str) else token
-    for _ in range(100):  # a waiter's stat can hold the file for a moment on Windows
-        try:
-            with open(path, "rb") as f:
-                if f.read() != token:
-                    return
-            os.remove(path)
-            return
-        except FileNotFoundError:
-            return
-        except OSError:
-            time.sleep(0.05)
+drop = memoria.drop  # removes a lock file only while it still holds its owner's token
 
 
 @contextlib.contextmanager
 def locked(raiz, wait=10, stale=30):
-    """One writer at a time: <root>/.superpowers/hub.lock, created exclusively, retried for ~10 s, removed after."""
+    """One writer at a time: <root>/.superpowers/hub.lock, memoria.lock's scheme, retried for ~10 s, removed after."""
     path = os.path.join(raiz, ".superpowers", "hub.lock")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    token = f"{os.getpid()} {os.urandom(8).hex()}"
-    end, denied = time.time() + wait, 0
-    while True:
-        try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            break
-        except FileExistsError:
-            denied = 0
-        except PermissionError as x:  # Windows says "denied" for a file that is being deleted; with no file, retry briefly
-            denied = 0 if os.path.exists(path) else denied + 1
-            if denied > 20:
-                raise Refuse("usage", f"cannot create {path}: {x}")
-        with contextlib.suppress(OSError):
-            if time.time() - os.path.getmtime(path) > stale:
-                with open(path, "rb") as f:
-                    old = f.read()
-                # drop() deletes only the content just read, so a lock another taker already replaced stays
-                drop(path, old)
-        if time.time() > end:
-            raise Refuse("busy", f"another hub command holds {path}; if no hub command is running, delete that file")
-        time.sleep(0.05)
+    held = memoria.lock(path, wait=wait, stale=stale)
+    try:  # only taking the lock is translated; an error of the command itself goes up as it is
+        held.__enter__()
+    except memoria.Busy:
+        raise Refuse("busy", f"another hub command holds {path}; if no hub command is running, delete that file")
+    except PermissionError as x:
+        raise Refuse("usage", f"cannot create {path}: {x}")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(token)
         yield
     finally:
-        drop(path, token)
+        held.__exit__(None, None, None)
 
 
 def marked(path, avisos, nome):
@@ -382,7 +364,17 @@ def listing(raiz, dados, agora, sistema):
         return 0 if (p["entrega"] or {}).get("espera") else 1 if p["estado"] == "sem-resposta" else 2
 
     projetos.sort(key=rank)
-    return {"raiz": raiz, "dono": dados.get("dono"), "avisos": [clean(w) for w in avisos], "projetos": projetos}
+    try:
+        mem = memoria.load()
+        for item in mem["reservas"] + mem["pedidos"]:
+            for k in ("nome", "rotulo", "desde", "projeto"):
+                if k in item:
+                    item[k] = clean(item[k], 300)
+    except (memoria.Corrupt, OSError):
+        mem = None
+        avisos.append(f"memoria unreadable: {memoria.path()}")
+    return {"raiz": raiz, "dono": dados.get("dono"), "avisos": [clean(w) for w in avisos], "projetos": projetos,
+            "memoria": mem}
 
 
 def cmd_init(a, raiz, dados):
@@ -408,6 +400,12 @@ def cmd_status(a, raiz, dados):
         print(f"warning: {w}")
     if not lst["projetos"]:
         print(f"No projects with the plugin under {raiz}. In a project folder, run: {INSTALL}")
+    mem = lst["memoria"] or {"reservas": [], "pedidos": [], "prioridades": {}}
+    for r in mem["reservas"]:
+        print(f"memory: {clean(r.get('nome'))} {r.get('gb')} GB ({clean(r.get('rotulo'))}) since {clean(r.get('desde'))}")
+    for r in mem["pedidos"]:
+        print(f"memory waits: {clean(r.get('nome'))} {r.get('copias')} x {r.get('gb')} GB, priority "
+              f"{memoria.priority(mem, r.get('projeto')):g}, since {clean(r.get('desde'))}")
     for p in lst["projetos"]:
         en = p["entrega"]
         extra = [f"conta {clean(p['conta'])}"] if p["conta"] else []
@@ -447,8 +445,34 @@ def cmd_add(a, raiz, dados):
     save(raiz, dados)
 
 
+def pasta_de(raiz, dados, nome):
+    todos, _ = known(raiz, dados)
+    n = resolve(nome, todos, dados)
+    return n, todos[n][0]
+
+
+def memory_write(fn, *args):
+    try:
+        return fn(*args)
+    except memoria.Busy as x:
+        raise Refuse("busy", f"another command holds {x}; if none is running, delete that file")
+    except memoria.Corrupt as x:
+        raise Refuse("bad-memory", f"{x} is not a valid memory file; nothing was overwritten")
+
+
+def cmd_liberar(a, raiz, dados):
+    n, pasta = pasta_de(raiz, dados, a.projeto)
+    count = memory_write(memoria.release, memoria.key(pasta), a.rotulo)
+    print(f"released {count} reservation{'' if count == 1 else 's'} of {n}")
+
+
 def cmd_set(a, raiz, dados):
     template(a.abrir)
+    if a.prioridade is not None:
+        if a.projeto is None:
+            raise Refuse("usage", "--prioridade needs --projeto")
+        n, pasta = pasta_de(raiz, dados, a.projeto)
+        memory_write(memoria.set_priority, memoria.key(pasta), n, a.prioridade)
     if a.projeto is None:
         if a.conta is not None:
             raise Refuse("usage", "--conta needs --projeto")
@@ -627,7 +651,12 @@ def main(argv=None):
     p.add_argument("--abrir")
     p.add_argument("--bg", choices=["on", "off"])
     p.add_argument("--estado", choices=["respondido"])
+    p.add_argument("--prioridade", type=int)
     p.set_defaults(fn=cmd_set)
+    p = sub.add_parser("liberar", parents=[com])
+    p.add_argument("--projeto", required=True)
+    p.add_argument("--rotulo")
+    p.set_defaults(fn=cmd_liberar)
     p = sub.add_parser("delegate", parents=[com])
     p.add_argument("--projeto", required=True)
     p.add_argument("--nao-entregue", action="store_true")
@@ -667,7 +696,7 @@ def main(argv=None):
             a.texto = sys.stdin.read(4096)
             if not a.texto.strip():
                 raise Refuse("usage", "the request text comes on stdin and is empty")
-        if a.cmd in ("init", "add", "set", "remove", "delegate", "claim"):
+        if a.cmd in ("init", "add", "set", "remove", "delegate", "claim", "liberar"):
             with locked(raiz, wait=getattr(a, "espera", 10)):  # load, change and save as one step
                 a.fn(a, raiz, load(raiz))
         else:

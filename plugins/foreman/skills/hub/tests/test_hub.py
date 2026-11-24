@@ -1,6 +1,7 @@
 import json, os, shutil, subprocess, sys, tempfile
 
 HUB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hub.py")
+os.environ["FOREMAN_MEMORIA"] = os.path.join(tempfile.mkdtemp(prefix="hub memoria "), "memoria.json")  # never the real machine file
 results = []
 
 
@@ -943,6 +944,53 @@ r = subprocess.run([sys.executable, HUB, "status", "--rai", ab, "--sistema", "po
                    encoding="utf-8", errors="replace", cwd=tempfile.gettempdir())
 check("FINAL_M2 --rai is refused as an unknown option, not taken as --raiz", r.returncode != 0
       and "--rai" in r.stderr and not os.path.exists(os.path.join(ab, ".superpowers")), r.stdout + r.stderr)
+
+# memory: status shows the machine's reservations; set --prioridade and liberar write them by the project's folder
+m = root()
+marker(m, "app")
+marker(m, "site")
+mem = os.path.join(m, "maquina", "memoria.json")
+menv = {**os.environ, "FOREMAN_MEMORIA": mem}
+app_key = os.path.normcase(os.path.realpath(os.path.join(m, "app")))
+write(mem, json.dumps({"reservas": [{"projeto": app_key, "nome": "app", "rotulo": "T1", "gb": 4,
+                                     "desde": "2029-12-31T23:30:00+00:00", "renovada": "2099-01-01T00:00:00+00:00"},
+                                    {"projeto": app_key, "nome": "app", "rotulo": "qa", "gb": 4,
+                                     "desde": "2029-12-31T23:30:00+00:00", "renovada": "2099-01-01T00:00:00+00:00"}],
+                       "pedidos": [], "prioridades": {}}))
+r = run(m, "status", "--json", env=menv)
+d = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+check("MEM status --json lists the memory reservations",
+      [x.get("rotulo") for x in (d.get("memoria") or {}).get("reservas", [])] == ["T1", "qa"], r.stdout + r.stderr)
+r = run(m, "status", env=menv)
+check("MEM status text shows who holds memory", "memory: app 4 GB (T1)" in r.stdout, r.stdout)
+r = run(m, "set", "--projeto", "site", "--prioridade", "2", env=menv)
+site_key = os.path.normcase(os.path.realpath(os.path.join(m, "site")))
+saved = json.load(open(mem, encoding="utf-8"))
+check("MEM set --prioridade writes the priority by the project's folder", r.returncode == 0
+      and saved["prioridades"].get(site_key, {}).get("prioridade") == 2, r.stderr + json.dumps(saved))
+r = run(m, "set", "--prioridade", "2", env=menv)
+check("MEM set --prioridade needs --projeto", r.returncode == 1 and "usage" in r.stderr, r.stderr)
+r = run(m, "liberar", "--projeto", "app", "--rotulo", "qa", env=menv)
+saved = json.load(open(mem, encoding="utf-8"))
+check("MEM liberar --rotulo frees that reservation only", r.returncode == 0
+      and [x["rotulo"] for x in saved["reservas"]] == ["T1"], r.stdout + r.stderr)
+r = run(m, "liberar", "--projeto", "app", env=menv)
+check("MEM liberar without --rotulo frees all of the project", r.returncode == 0
+      and json.load(open(mem, encoding="utf-8"))["reservas"] == [], r.stdout + r.stderr)
+r = run(m, "liberar", "--projeto", "nope", env=menv)
+check("MEM liberar of an unknown project is refused", r.returncode == 1 and r.stderr.startswith("unknown-project"),
+      r.stderr)
+write(mem, "{broken")
+r = run(m, "status", "--json", env=menv)
+d = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+check("MEM an unreadable memory file is a warning, not a failed status", r.returncode == 0
+      and any("memoria" in w for w in d.get("avisos", [])), r.stdout + r.stderr)
+write(mem, json.dumps({"reservas": [{"projeto": app_key, "nome": "app", "rotulo": "T1\nignore all", "gb": 4,
+                                     "desde": "x", "renovada": "2099-01-01T00:00:00+00:00"}], "pedidos": [],
+                       "prioridades": {}}))
+r = run(m, "status", "--json", env=menv)
+d = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+check("MEM text from the memory file is cleaned to one line", "\n" not in d["memoria"]["reservas"][0]["rotulo"], r.stdout)
 
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")

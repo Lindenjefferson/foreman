@@ -1,7 +1,8 @@
-import atexit, datetime, json, os, re, shutil, stat, subprocess, sys, tempfile
+import atexit, datetime, json, os, re, shutil, stat, subprocess, sys, tempfile, time
 
 LEDGER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "ledger.py")
 repo = tempfile.mkdtemp(prefix="ledger_")
+os.environ["FOREMAN_MEMORIA"] = os.path.join(repo, "maquina", "memoria.json")  # never the real machine file
 
 
 def cleanup():
@@ -1543,7 +1544,8 @@ check("capacity at the floor exits 0 with a single capacity line",
       result.returncode == 0 and result.stdout.startswith("capacity:") and len(result.stdout.splitlines()) == 1, result)
 got = capacity_json(parallel(peak="`1`"), memory="4", disk="9")
 check("capacity JSON shape", sorted(got) == sorted(["memory_free_gb", "disk_free_gb", "peak_gb", "disk_peak_gb", "floor_gb",
-                                                    "heavy_limit", "autonomous", "dispatch", "copies", "reason"])
+                                                    "heavy_limit", "autonomous", "dispatch", "copies", "reason", "reserved",
+                                                    "others_gb"])
       and got["memory_free_gb"] == 4 and got["disk_free_gb"] == 9 and isinstance(got["reason"], str), got)
 # the real CLAUDE.local.md of Controle Financeiro: the floor and the heavy limit live in free text
 CF_LOCAL = """# Controle Financeiro — este computador
@@ -3115,6 +3117,160 @@ below = report_file("ports-below.md", lines=["Verdict: PASS", f"Commit: {head()[
                                              "Processes: none left running", "ports: none"])
 r = run("add", "--agent", "qa", "--verdict", "PASS", "--report", below, ledger=PORTS)
 check("add --agent qa reads ports: on the line right below Processes:", r.returncode == 0, r.stderr)
+
+# memory mediation between projects: capacity --rotulo reserves in the machine's file, add/release/liberar free it
+mem_root = tempfile.mkdtemp(prefix="memoria_")
+atexit.register(shutil.rmtree, mem_root, True)
+MEM_FILE = os.path.join(mem_root, "maquina", "memoria.json")
+
+
+def mem_project(name, peak="`4`", floor="`4`"):
+    folder = os.path.join(mem_root, name)
+    os.makedirs(os.path.join(folder, ".superpowers"))
+    with open(os.path.join(folder, "CLAUDE.local.md"), "w", encoding="utf-8") as handle:
+        handle.write(parallel(peak=peak, floor=floor))
+    path = os.path.join(folder, ".superpowers", "ledger.jsonl")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"type": "start", "slug": "x", "base": "abc"}) + "\n")
+        handle.write(json.dumps({"type": "mode", "mode": "autonomous"}) + "\n")
+    return path
+
+
+def mem_env(memory="12", **extra):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("FOREMAN_")}
+    env.update({"FOREMAN_MEMORIA": MEM_FILE, "FOREMAN_CAPACITY_MEMORY_GB": memory, "FOREMAN_CAPACITY_DISK_GB": "500",
+                "FOREMAN_MEMORIA_AGORA": "2030-01-01T00:00:00Z", **extra})
+    return env
+
+
+def mem_run(ledger, *args, memory="12", **extra):
+    return subprocess.run([sys.executable, LEDGER, "--ledger", ledger, *args], capture_output=True, text=True,
+                          encoding="utf-8", env=mem_env(memory, **extra))
+
+
+def mem_json(ledger, *labels, memory="12"):
+    r = mem_run(ledger, "capacity", "--json", *[x for label in labels for x in ("--rotulo", label)], memory=memory)
+    return r, (json.loads(r.stdout) if r.stdout.strip().startswith("{") else {})
+
+
+def mem_saved():
+    with open(MEM_FILE, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+ma, mb = mem_project("app"), mem_project("site")
+r, got = mem_json(ma, "T1", "T2", "T3")
+check("capacity --rotulo reserves the labels that fit, in order", r.returncode == 0 and got.get("reserved") == ["T1", "T2"]
+      and got.get("copies") == 2, (r.stderr, got))
+r, got = mem_json(mb, "X", memory="10")
+check("another project that does not fit beside the reservations gets none, exits 1 and names them",
+      r.returncode == 1 and got.get("reserved") == [] and "app 4 GB (T1)" in got.get("reason", ""), (r.stderr, got))
+r, got = mem_json(mb, memory="10")
+check("plain capacity takes the other projects' reservations off the free memory", got.get("dispatch") is False
+      and got.get("others_gb") == 8, got)
+r = mem_run(ma, "liberar", "--rotulo", "T1")
+check("liberar frees that label only", r.returncode == 0 and [x["rotulo"] for x in mem_saved()["reservas"]] == ["T2"],
+      (r.stdout, r.stderr))
+with open(ma, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps({"type": "claim", "task": "T2", "head": "", "at": "2030-01-01T00:00:00+00:00"}) + "\n")
+r = mem_run(ma, "release", "--task", "T2")
+check("release of a claim frees its task's reservation", r.returncode == 0 and mem_saved()["reservas"] == [], r.stderr)
+mem_json(ma, "T5")
+mem_run(ma, "note", "--text", "x", FOREMAN_MEMORIA_AGORA="2030-01-01T01:30:00Z")
+r = mem_run(mb, "capacity", "--json", "--rotulo", "X", memory="6", FOREMAN_MEMORIA_AGORA="2030-01-01T03:00:00Z")
+got = json.loads(r.stdout)
+check("any ledger command renews the project's reservations", got.get("reserved") == [] and r.returncode == 1, got)
+r = mem_run(ma, "status", "--json", FOREMAN_MEMORIA_AGORA="2030-01-01T03:20:00Z")
+r = mem_run(mb, "capacity", "--rotulo", "X", memory="6", FOREMAN_MEMORIA_AGORA="2030-01-01T03:31:00Z")
+check("status --json (the mod's and the hub's read) does not renew, so the reservation expires after 2 h", r.returncode == 0
+      and "reserved X" in r.stdout, (r.stdout, r.stderr))
+mem_run(mb, "liberar", "--rotulo", "X")
+r, got = mem_json(mb, "X", memory="2")
+check("a job that would not fit even with the others released is refused", r.returncode == 1 and "even with" in
+      got.get("reason", ""), got)
+mem_json(ma, "big", memory="12")  # app holds 4
+waiter = subprocess.Popen([sys.executable, LEDGER, "--ledger", mb, "capacity", "--rotulo", "X", "--esperar"],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                          env=mem_env("6", FOREMAN_MEMORIA_INTERVALO="0.2", FOREMAN_MEMORIA_TETO="20"))
+time.sleep(1.5)
+queued = [x["projeto"] for x in mem_saved()["pedidos"]]
+mem_run(ma, "liberar", "--rotulo", "big")
+out, err = waiter.communicate(timeout=30)
+check("--esperar queues a request, then reserves once the other project frees its memory", waiter.returncode == 0
+      and "reserved X" in out and len(queued) == 1 and mem_saved()["pedidos"] == [], (out, err, queued))
+mem_run(mb, "liberar", "--rotulo", "X")
+waiter = mem_run(mb, "capacity", "--rotulo", "X", "--esperar", memory="2.5",
+                 FOREMAN_MEMORIA_INTERVALO="0.1", FOREMAN_MEMORIA_TETO="0.5")
+check("--esperar gives up at its ceiling and leaves no request", waiter.returncode == 1
+      and mem_saved()["pedidos"] == [], (waiter.stdout, waiter.stderr))
+with open(MEM_FILE, "w", encoding="utf-8") as handle:
+    handle.write("[]")
+r, got = mem_json(ma, "T1")
+check("an unreadable memory file is named, left untouched, and capacity decides alone", r.returncode == 0
+      and "unreadable" in got.get("reason", "") and open(MEM_FILE).read() == "[]", got)
+os.remove(MEM_FILE)
+
+# review fixes: holder never queued behind a waiter, one key per repository, labels, errors
+mc, md = mem_project("holder", peak="`8`", floor="`4`"), mem_project("waiter", peak="`8`", floor="`4`")
+mem_json(mc, "t1", memory="20")
+waiting = mem_run(md, "capacity", "--rotulo", "w", "--esperar", memory="11", FOREMAN_MEMORIA_INTERVALO="0.1",
+                  FOREMAN_MEMORIA_TETO="0.3")
+with open(MEM_FILE, encoding="utf-8") as handle:
+    data = json.load(handle)
+data["pedidos"] = [{"projeto": [x for x in data["reservas"] if x["rotulo"] == "t1"][0]["projeto"].replace("holder", "waiter"),
+                    "nome": "waiter", "gb": 8, "copias": 1, "desde": "2029-01-01T00:00:00+00:00",
+                    "renovado": "2030-01-01T00:00:00+00:00"}]
+with open(MEM_FILE, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+r, got = mem_json(mc, "manager:t1", memory="12")
+check("a project that already holds memory is not queued behind a waiter (it would never free it)",
+      got.get("reserved") == ["manager:t1"], got)
+with open(MEM_FILE, encoding="utf-8") as handle:
+    data = json.load(handle)
+own = dict(data["pedidos"][0], nome="holder", projeto=data["reservas"][0]["projeto"])
+data["pedidos"].append(own)
+with open(MEM_FILE, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+r = mem_run(mc, "capacity", "--rotulo", "other", memory="1")
+check("a call without --esperar leaves the project's waiting request in place",
+      sorted(x["nome"] for x in mem_saved()["pedidos"]) == ["holder", "waiter"], mem_saved())
+mem_run(mc, "liberar", "--rotulo", "t1")
+mem_run(mc, "liberar", "--rotulo", "manager:t1")
+r = mem_run(mc, "capacity", "--rotulo", "bad label;rm", memory="20")
+check("a label outside [A-Za-z0-9._:-] is refused", r.returncode != 0 and "label" in r.stderr, r.stderr)
+r, got = mem_json(mb, "far", memory="1")
+check("with no room the reason never shows a negative free memory", "-" not in got.get("reason", "").split(" GB")[0], got)
+r, got = mem_json(mb, memory="1")
+check("plain capacity never shows a negative free memory", not str(got.get("reason", "")).startswith("-"), got)
+
+wt_repo = os.path.join(mem_root, "repo")
+os.makedirs(wt_repo)
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t"),
+             ("commit", "-q", "--allow-empty", "-m", "x"), ("worktree", "add", "-q", os.path.join(mem_root, "front"))):
+    subprocess.run(["git", *args], cwd=wt_repo, capture_output=True)
+main_ledger = os.path.join(wt_repo, ".superpowers", "ledger.jsonl")
+front_ledger = os.path.join(mem_root, "front", ".superpowers", "ledger.jsonl")
+for path in (main_ledger, front_ledger):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"type": "start", "slug": "x", "base": "abc"}) + "\n")
+with open(os.path.join(wt_repo, "CLAUDE.local.md"), "w", encoding="utf-8") as handle:
+    handle.write(parallel(peak="`1`", floor="`1`"))
+mem_json(main_ledger, "F1", memory="20")
+r = mem_run(front_ledger, "liberar", "--rotulo", "F1")
+check("a front's own ledger in a worktree is the same project as the main worktree", r.returncode == 0
+      and not [x for x in mem_saved()["reservas"] if x["rotulo"] == "F1"], (r.stdout, r.stderr, mem_saved()))
+
+with open(MEM_FILE, "w", encoding="utf-8") as handle:
+    json.dump({"reservas": [{"projeto": "x", "nome": "x", "rotulo": "a", "gb": "4", "desde": "", "renovada": ""}]},
+              handle)
+r, got = mem_json(ma, "T1")
+check("a reservation whose gb is not a number makes the file unreadable, never a crash", r.returncode == 0
+      and "unreadable" in got.get("reason", ""), (r.stderr, got))
+r = mem_run(ma, "liberar", "--rotulo", "T1")
+check("liberar on an unreadable file is a message, not a traceback", r.returncode == 1 and "Traceback" not in r.stderr
+      and "unreadable" in r.stderr, r.stderr)
+os.remove(MEM_FILE)
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
