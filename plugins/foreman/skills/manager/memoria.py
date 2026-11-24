@@ -8,7 +8,8 @@ One file per machine, ~/.foreman/memoria.json (FOREMAN_MEMORIA names another pat
 
 A project is the normcase'd real path of its main worktree (key; ledger.py finds it through git, so a front's
 ledger in a worktree is the same project), nome its folder name. A reservation is the peak of one heavy job
-(preparing or verifying) under a label (LABEL: a dev task id, qa, or manager:<task>). Each ledger.py command of the
+(preparing or verifying) under a label (LABEL: a dev task id, qa, or manager:<task>; QA matches the labels of a qa's copies, all freed by its add). Each
+ledger.py command of the
 project but status --json (the mod's and the hub's read) renews its reservations (renew; never creates the file);
 one not renewed for 2 h no longer counts, and a request (pedido) not renewed for 5 min neither: load drops both, and the
 next write removes them. Times are UTC ISO to the second; FOREMAN_MEMORIA_AGORA fixes the clock (tests).
@@ -34,6 +35,7 @@ import contextlib, datetime, json, os, re, tempfile, time
 RESERVA_TTL = 2 * 3600  # seconds a reservation lives with no renewal
 PEDIDO_TTL = 300  # seconds a request lives with no renewal
 LABEL = re.compile(r"[A-Za-z0-9._:-]{1,60}")
+QA = re.compile(r"qa(?:[-_:.].*)?")  # the labels of a qa's copies: qa, qa-full-1, qa:ciclo6
 
 
 def number(x):
@@ -259,15 +261,16 @@ def withdraw(projeto):
         d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
 
 
-def release(projeto, rotulo=None):
-    """Drops the project's reservation with that label (every reservation and its request without one); the count."""
+def release(projeto, rotulo=None, family=None):
+    """Drops the project's reservation with that label, or whose label family (a compiled pattern) matches; every
+    reservation and its request with neither. The count."""
     if not os.path.exists(path()):
         return 0
     with changing() as d:
         before = len(d["reservas"])
-        d["reservas"] = [r for r in d["reservas"] if not (r.get("projeto") == projeto
-                                                           and (rotulo is None or r.get("rotulo") == rotulo))]
-        if rotulo is None:
+        d["reservas"] = [r for r in d["reservas"] if not (r.get("projeto") == projeto and (
+            family.fullmatch(str(r.get("rotulo"))) if family else rotulo is None or r.get("rotulo") == rotulo))]
+        if rotulo is None and family is None:
             d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
         return before - len(d["reservas"])
 

@@ -3324,5 +3324,58 @@ mem_run(me, "liberar", "--rotulo", "A1")
 mem_run(me, "liberar", "--rotulo", "A2")
 mem_run(mf, "liberar", "--rotulo", "B1")
 
+# night 3: a qa's add frees every qa label of the project (qa, qa-<n>, qa:<n>), not only "qa"
+qa_repo = os.path.join(mem_root, "qa-repo")
+os.makedirs(os.path.join(qa_repo, ".superpowers"))
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t"),
+             ("commit", "-q", "--allow-empty", "-m", "x")):
+    subprocess.run(["git", *args], cwd=qa_repo, capture_output=True)
+qa_head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=qa_repo, capture_output=True, text=True).stdout.strip()
+with open(os.path.join(qa_repo, "CLAUDE.local.md"), "w", encoding="utf-8") as handle:
+    handle.write(parallel(peak="`1`", floor="`1`"))
+with open(os.path.join(qa_repo, "qa.md"), "w", encoding="utf-8") as handle:
+    handle.write(f"Verdict: PASS\nCommit: {qa_head[:7]}\nInterface: n/a\nProcesses: none left running; ports: none\n")
+qa_ledger = os.path.join(qa_repo, ".superpowers", "ledger.jsonl")
+with open(qa_ledger, "w", encoding="utf-8") as handle:
+    for entry in ({"type": "start", "slug": "q", "base": qa_head},
+                  {"type": "run", "agent": "dev", "task": "Q1", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": qa_head, "at": "2030-01-01T00:00:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+for label in ("qa-full-1", "qa:ciclo6", "qa", "qadir"):
+    mem_run(qa_ledger, "capacity", "--rotulo", label, memory="100")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", qa_ledger, "add", "--agent", "qa", "--verdict", "PASS",
+                    "--report", "qa.md"], cwd=qa_repo, capture_output=True, text=True, encoding="utf-8",
+                   env=mem_env("100"))
+left = sorted(x["rotulo"] for x in mem_saved()["reservas"] if x["nome"] == "qa-repo")
+check("a qa's add frees qa, qa-<n> and qa:<n>, and keeps another label", r.returncode == 0 and left == ["qadir"],
+      (r.stdout, r.stderr, left))
+mem_run(qa_ledger, "liberar", "--rotulo", "qadir")
+
+# night 4: the full qa's checks read the delivery's worktree the command runs in, not the ledger's main worktree
+fq = os.path.join(mem_root, "fq-repo")
+os.makedirs(fq)
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t"),
+             ("commit", "-q", "--allow-empty", "-m", "base")):
+    subprocess.run(["git", *args], cwd=fq, capture_output=True)
+fq_base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=fq, capture_output=True, text=True).stdout.strip()
+fq_tree = os.path.join(mem_root, "fq-delivery")
+subprocess.run(["git", "worktree", "add", "-q", "-b", "feat/x", fq_tree], cwd=fq, capture_output=True)
+subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "work"], cwd=fq_tree, capture_output=True)
+fq_head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=fq_tree, capture_output=True, text=True).stdout.strip()
+fq_ledger = os.path.join(fq, ".superpowers", "ledger.jsonl")
+os.makedirs(os.path.dirname(fq_ledger))
+with open(fq_ledger, "w", encoding="utf-8") as handle:
+    for entry in ({"type": "start", "slug": "f", "base": fq_base},
+                  {"type": "run", "agent": "dev", "task": "F1", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": fq_base, "at": "2030-01-01T00:00:00+00:00"},
+                  {"type": "run", "agent": "reviewer", "task": "", "verdict": "PASS", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": fq_head, "at": "2030-01-01T00:01:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", fq_ledger, "status", "--json"], cwd=fq_tree,
+                   capture_output=True, text=True, encoding="utf-8")
+blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().startswith("{") else [r.stderr]
+check("the full qa's Reviewed check reads the worktree it runs in", not any("not in this history" in b for b in blockers),
+      blockers)
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
