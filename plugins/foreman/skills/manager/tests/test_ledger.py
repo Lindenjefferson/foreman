@@ -3442,5 +3442,26 @@ blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().
 check("a closed claim on the delivery's worktree keeps it read", not any("not in this history" in b for b in blockers),
       blockers)
 
+# night 8: a front's ledger in its own worktree never lists that worktree nor its branch as leftovers
+lo = os.path.join(mem_root, "lo-repo")
+os.makedirs(lo)
+for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t.com"), ("config", "user.name", "t"),
+             ("commit", "-q", "--allow-empty", "-m", "base")):
+    subprocess.run(["git", *args], cwd=lo, capture_output=True)
+with open(os.path.join(lo, ".git", "info", "exclude"), "a", encoding="utf-8") as handle:
+    handle.write(".superpowers/\n")  # as in a project: the ledger never makes the front's tree dirty
+lo_base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=lo, capture_output=True, text=True).stdout.strip()
+lo_tree = os.path.join(mem_root, "_temp", "lo-repo-worktrees", "frente")
+subprocess.run(["git", "worktree", "add", "-q", "-b", "feat/frente", lo_tree], cwd=lo, capture_output=True)
+subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "work"], cwd=lo_tree, capture_output=True)
+lo_ledger = os.path.join(lo_tree, ".superpowers", "ledger.jsonl")
+os.makedirs(os.path.dirname(lo_ledger))
+with open(lo_ledger, "w", encoding="utf-8") as handle:
+    handle.write(json.dumps({"type": "start", "slug": "frente", "base": lo_base}) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", lo_ledger, "status"], cwd=lo_tree,
+                   capture_output=True, text=True, encoding="utf-8")
+check("a front's own worktree and branch are no leftovers", "leftover" not in r.stdout and r.returncode == 0,
+      (r.stdout, r.stderr))
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

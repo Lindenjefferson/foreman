@@ -4,6 +4,12 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.4 — frente não é sobra
+
+- **O `status` de uma frente não lista a worktree e a branch dela como sobras** (defeito): num projeto do autor, com o ledger na worktree da entrega, o `status` pedia `git worktree remove` da própria worktree e `git branch -d` da própria branch assim que o head dela estava integrado, e a entrega não chegava ao gate. Agora a worktree do ledger e a branch dela contam como trabalho em andamento. Número: sobras que são a frente do próprio ledger (meta 0).
+
+**Ao atualizar:** nada muda. Sai o contorno de copiar o ledger da frente para a pasta principal para chegar ao gate.
+
 ## 1.16.3 — worktree da entrega com claims fechados
 
 - **O `add --full` lê a worktree da entrega mesmo depois de uma `fix-N` rodar nela** (defeito): num projeto do autor, os claims das `fix-N` nomeavam a própria worktree da entrega, e a 1.16.2 tratava toda worktree já nomeada por um claim como worktree de tarefa, voltando a ler a `main` e a recusar a suíte inteira. Agora só contam os claims em voo e os das entregas em preparação. Número: recusas do `--full` com "not in this history" numa entrega em worktree (meta 0).
