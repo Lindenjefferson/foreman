@@ -1546,6 +1546,7 @@ def leftovers(entries, ledger, head, testing=False):
     copies = os.path.normpath(os.path.join(os.path.dirname(root), "_temp", os.path.basename(root) + "-worktrees"))
     homes = (norm(copies) + os.sep, norm(os.path.join(root, ".claude", "worktrees")) + os.sep)
     held = {norm(entry["worktree"]) for entry in claims(entries).values() if entry.get("worktree")}
+    held.add(norm(os.path.dirname(where)))  # the ledger's own worktree: a front's tree and branch are its delivery
     for _, prepared in queued(ledger):  # a preparation's own worktree and its claims' are its work, even clean
         held |= {norm(item["worktree"]) for item in prepared[:1] + list(claims(prepared).values())
                  if item.get("worktree")}
