@@ -3225,6 +3225,9 @@ with open(MEM_FILE, "w", encoding="utf-8") as handle:
 r, got = mem_json(mc, "manager:t1", memory="12")
 check("a project that already holds memory is not queued behind a waiter (it would never free it)",
       got.get("reserved") == ["manager:t1"], got)
+r, got = mem_json(mc, "t2", memory="30")
+check("a project holding memory still waits behind the queue for a new job", got.get("reserved") == []
+      and "waits for waiter" in got.get("reason", ""), got)
 with open(MEM_FILE, encoding="utf-8") as handle:
     data = json.load(handle)
 own = dict(data["pedidos"][0], nome="holder", projeto=data["reservas"][0]["projeto"])

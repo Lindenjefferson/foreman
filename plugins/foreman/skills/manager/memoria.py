@@ -18,8 +18,9 @@ reservations whole (shortcut: a running job's memory is then counted twice, in t
 reservation, so a project waits longer than needed, never crashes another; upgrade to discounting what is already in
 use if the waits weigh on the deliveries' clock). A project's own reservations are not subtracted: the free memory
 already shows its running copies. A request of another project with a higher priority, or the same priority and an
-older desde, makes this one wait even when memory fits, unless this one already holds a reservation: a project in the
-middle of its work finishes it (its suite, its qa), or it would never free what the other waits for. A request that would not fit even with every other
+older desde, makes this one wait even when memory fits, unless every label it asks is manager:<task> of a task it already holds:
+the suite that checks a held task's report finishes that task, or it would never free what the other waits for. A
+new job of a project that holds memory waits its turn like any other. A request that would not fit even with every other
 reservation released is refused at once and never queued. Only a waiting caller (esperando) writes or drops the
 project's request; a grant drops it.
 
@@ -211,8 +212,9 @@ def reserve(projeto, nome, rotulos, gb, free, fits, esperando=False):
         if fits(free + reserved) < 1:
             return [], (f"{free:.1f} GB free and {reserved:g} GB reserved by other projects: one copy would not fit "
                         "even with them released"), True
-        holding = any(r.get("projeto") == projeto for r in d["reservas"])
-        ahead = [] if holding else [p for p in d["pedidos"] if p.get("projeto") != projeto and (
+        held = {r.get("rotulo") for r in d["reservas"] if r.get("projeto") == projeto}
+        finishing = all(r.startswith("manager:") and r[len("manager:"):] in held for r in rotulos)
+        ahead = [] if finishing else [p for p in d["pedidos"] if p.get("projeto") != projeto and (
             priority(d, p.get("projeto")) > mine or priority(d, p.get("projeto")) == mine and str(p.get("desde")) < since)]
         granted = [] if ahead else list(rotulos)[:max(0, fits(free - reserved))]
         if granted:

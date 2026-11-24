@@ -4,6 +4,12 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.1 — quem segura memória não fura a fila
+
+- **Um projeto que segura uma reserva espera a vez para um trabalho novo** (defeito): o conserto do travamento na 1.16.0 isentava da fila todo projeto que já segurava qualquer reserva, então um app do autor, segurando a do `qa`, reservaria cópias novas à frente do pedido de um projeto de prioridade maior. A isenção vale agora só para a `manager:<tarefa>` de uma tarefa que o projeto já segura, a suíte que confere o relatório dela, porque sem ela a tarefa nunca liberaria a memória. Número: reservas novas concedidas com um pedido de prioridade maior na fila (meta 0).
+
+**Ao atualizar:** nada muda. Contorno que sai, se a sessão o tiver: ler os "pedidos" do `memoria.json` antes de cada `capacity --rotulo` e não reservar nada novo com um pedido de outro projeto na fila.
+
 ## 1.16.0 — memória mediada entre os projetos da máquina
 
 - **Os projetos da mesma máquina reservam a memória antes do trabalho pesado** (melhoria, decisão do dono): duas entregas não se enxergavam, e o `capacity` lia a memória livre só no despacho; um app do autor teve a suíte inteira parada três vezes num dia enquanto outro projeto rodava a dele, com workers órfãos de até 8 GB e a entrega pausada. Agora o `capacity --rotulo` reserva o pico de cada cópia num arquivo da máquina (`~/.foreman/memoria.json`, regras na docstring de `memoria.py`), a conta de qualquer projeto desconta as reservas dos outros, e quem chega depois espera a vez com `--esperar`, na ordem da prioridade que o dono define no hub (`hub.py set --prioridade`). O `add` e o `release` liberam a reserva da tarefa, o `liberar` a da suíte do manager, e uma reserva sem renovação some em 2 h; o `hub.py status` mostra quem ocupa e quem espera, e o `hub.py liberar` solta a de uma sessão que caiu. O prompt do manager cresceu uma frase no passo 4.1: é o comportamento novo, e a regra antiga do `capacity` ficou dentro dela. Número: paradas por memória com outro projeto rodando, por entrega (meta 0).

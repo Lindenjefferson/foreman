@@ -103,6 +103,15 @@ check("a held lock is Busy and names the file", busy)
 os.remove(lk)
 check("key folds the case on Windows and resolves the path", memoria.key(folder) == os.path.normcase(os.path.realpath(folder)))
 
+at("2030-02-01T00:00:00Z")
+memoria.reserve("h", "H", ["t1"], 4, 20, one_per(4, 4))
+memoria.set_priority("w", "W", 10)
+memoria.reserve("w", "W", ["big"], 30, 20, one_per(30, 22), esperando=True)  # 16 free after H: waits
+got, reason, _ = memoria.reserve("h", "H", ["t2"], 4, 20, one_per(4, 4))
+check("a holder asking for a new job waits behind a higher priority", got == [] and "waits for W" in reason, reason)
+got, _, _ = memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4))
+check("a holder finishing a job it holds (manager:<task>) is not queued", got == ["manager:t1"], got)
+
 shutil.rmtree(folder, True)
 print("ALL PASS" if all(results) else "SOME FAILED")
 sys.exit(0 if all(results) else 1)
