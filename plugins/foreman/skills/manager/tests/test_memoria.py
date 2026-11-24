@@ -103,6 +103,42 @@ check("a held lock is Busy and names the file", busy)
 os.remove(lk)
 check("key folds the case on Windows and resolves the path", memoria.key(folder) == os.path.normcase(os.path.realpath(folder)))
 
+at("2030-02-01T00:00:00Z")
+memoria.reserve("h", "H", ["t1"], 4, 20, one_per(4, 4))
+memoria.set_priority("w", "W", 10)
+memoria.reserve("w", "W", ["big"], 30, 20, one_per(30, 22), esperando=True)  # 16 free after H: waits
+got, reason, _ = memoria.reserve("h", "H", ["t2"], 4, 20, one_per(4, 4))
+check("a holder asking for a new job waits behind a higher priority", got == [] and "waits for W" in reason, reason)
+got, _, _ = memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4))
+check("a holder finishing a job it holds (manager:<task>) is not queued", got == ["manager:t1"], got)
+memoria.release("h", "manager:t1")
+got, _, _ = memoria.reserve("h", "H", ["manager:t1", "t2"], 4, 20, one_per(4, 4), esperando=True)
+check("a mixed call gets the finishing label and leaves the new job waiting", got == ["manager:t1"], got)
+memoria.release("h", "manager:t1")
+memoria.reserve("h", "H", ["t3"], 4, 20, one_per(4, 4), esperando=True)  # H queues behind W
+mine = [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"]
+memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4))
+check("a finishing grant keeps the project's place in the queue",
+      [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"] == mine and mine, memoria.load()["pedidos"])
+memoria.release("h", "manager:t1")
+memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4), esperando=True)
+check("a waiting call with only finishing labels keeps the project's place too",
+      [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"] == mine, memoria.load()["pedidos"])
+memoria.release("h", "manager:t1")
+FILE = os.path.join(folder, "outra", "memoria.json")  # a fresh file: no queue left by the cases above
+os.environ["FOREMAN_MEMORIA"] = FILE
+memoria.reserve("q", "Q", ["big"], 8, 20, one_per(8, 4))
+memoria.reserve("p", "P", ["u1"], 4, 20, one_per(4, 4))
+memoria.reserve("p", "P", ["manager:u1"], 4, 10, one_per(4, 4), esperando=True)  # 10 - 8 leaves no room yet
+check("a waiting call with only finishing labels writes no request", not [p for p in memoria.load()["pedidos"]
+                                                                          if p["projeto"] == "p"], memoria.load())
+memoria.release("q")
+memoria.release("p")
+FILE = os.path.join(folder, "maquina", "memoria.json")  # back to the shared file of the cases around
+os.environ["FOREMAN_MEMORIA"] = FILE
+got, _, _ = memoria.reserve("h", "H", ["manager:manager:t1"], 4, 20, one_per(4, 4))
+check("a chained manager: label is not a finishing one", got == [], got)
+
 shutil.rmtree(folder, True)
 print("ALL PASS" if all(results) else "SOME FAILED")
 sys.exit(0 if all(results) else 1)
