@@ -261,15 +261,17 @@ def withdraw(projeto):
         d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
 
 
-def release(projeto, rotulo=None, family=None):
+def release(projeto, rotulo=None, family=None, keep=()):
     """Drops the project's reservation with that label, or whose label family (a compiled pattern) matches; every
-    reservation and its request with neither. The count."""
+    reservation and its request with neither; a label in keep stays (a dev task whose id looks like the family). The
+    count."""
     if not os.path.exists(path()):
         return 0
     with changing() as d:
         before = len(d["reservas"])
         d["reservas"] = [r for r in d["reservas"] if not (r.get("projeto") == projeto and (
-            family.fullmatch(str(r.get("rotulo"))) if family else rotulo is None or r.get("rotulo") == rotulo))]
+            family.fullmatch(str(r.get("rotulo"))) and r.get("rotulo") not in keep if family
+            else rotulo is None or r.get("rotulo") == rotulo))]
         if rotulo is None and family is None:
             d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
         return before - len(d["reservas"])

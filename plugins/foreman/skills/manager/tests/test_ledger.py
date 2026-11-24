@@ -3377,5 +3377,54 @@ blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().
 check("the full qa's Reviewed check reads the worktree it runs in", not any("not in this history" in b for b in blockers),
       blockers)
 
+# night 5: the delivery worktree is read only when the ledger is the main worktree's and the cwd is no task worktree
+claim_tree = os.path.join(mem_root, "fq-task")
+subprocess.run(["git", "worktree", "add", "-q", "-b", "task/t", claim_tree, fq_head], cwd=fq, capture_output=True)
+with open(fq_ledger, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps({"type": "claim", "task": "F2", "worktree": claim_tree, "head": fq_base,
+                             "at": "2030-01-01T00:02:00+00:00"}) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", fq_ledger, "status", "--json"], cwd=claim_tree,
+                   capture_output=True, text=True, encoding="utf-8")
+blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().startswith("{") else [r.stderr]
+check("from a claimed task's worktree the checks read the ledger's root, not the task tip",
+      any("not in this history" in b for b in blockers), blockers)
+front_ledger2 = os.path.join(fq_tree, ".superpowers", "ledger.jsonl")
+os.makedirs(os.path.dirname(front_ledger2), exist_ok=True)
+with open(front_ledger2, "w", encoding="utf-8") as handle:
+    for entry in ({"type": "start", "slug": "g", "base": fq_base},
+                  {"type": "run", "agent": "dev", "task": "G1", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": fq_base, "at": "2030-01-01T00:00:00+00:00"},
+                  {"type": "run", "agent": "reviewer", "task": "", "verdict": "PASS", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": fq_head, "at": "2030-01-01T00:01:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", front_ledger2, "status", "--json"], cwd=fq,
+                   capture_output=True, text=True, encoding="utf-8")
+blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().startswith("{") else [r.stderr]
+check("a front's own ledger is read in that front even from the main worktree",
+      not any("not in this history" in b for b in blockers), blockers)
+for label in ("qa-e2e", "qa-full-9"):
+    mem_run(qa_ledger, "capacity", "--rotulo", label, memory="100")
+with open(qa_ledger, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps({"type": "claim", "task": "qa-e2e", "head": qa_head, "at": "2030-01-01T00:05:00+00:00"})
+                 + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", qa_ledger, "add", "--agent", "qa", "--verdict", "PASS",
+                    "--report", "qa.md"], cwd=qa_repo, capture_output=True, text=True, encoding="utf-8",
+                   env=mem_env("100"))
+left = sorted(x["rotulo"] for x in mem_saved()["reservas"] if x["nome"] == "qa-repo")
+check("a qa's add keeps a dev task's reservation whose id looks like a qa label", left == ["qa-e2e"], (r.stderr, left))
+mem_run(qa_ledger, "liberar", "--rotulo", "qa-e2e")
+
+# night 6: a preparation's worktree (recorded in next-<slug>.jsonl) also keeps the ledger's root
+prep_tree = os.path.join(mem_root, "fq-next")
+subprocess.run(["git", "worktree", "add", "-q", "-b", "feat/next", prep_tree, fq_head], cwd=fq, capture_output=True)
+with open(os.path.join(fq, ".superpowers", "next-nx.jsonl"), "w", encoding="utf-8") as handle:
+    handle.write(json.dumps({"type": "start", "slug": "nx", "next": True, "worktree": prep_tree,
+                             "at": "2030-01-01T00:03:00+00:00"}) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", fq_ledger, "status", "--json"], cwd=prep_tree,
+                   capture_output=True, text=True, encoding="utf-8")
+blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().startswith("{") else [r.stderr]
+check("from a preparation's worktree the checks read the ledger's root", any("not in this history" in b for b in blockers),
+      blockers)
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
