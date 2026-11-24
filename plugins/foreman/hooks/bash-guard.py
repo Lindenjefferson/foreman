@@ -639,9 +639,13 @@ def reaches_main(command, cwd, powershell=False):
     """Returns "deny" in autonomous mode when the command merges into or pushes the default branch, or merges a pull
     request; "ask" for the same commands otherwise (supervised, or no ledger); None when neither. Each step is read
     in each repository it may run in (git_folders), and the stricter answer wins. A git checkout or switch earlier
-    in the same command counts as the branch checked out there for what follows it."""
+    in the same command counts as the branch checked out there for what follows it. The session's folder is left
+    out only when every cd so far went to an existing rooted folder inside a repository, in a chain of && and ;
+    alone (no ||, pipe, background, subshell, block, substitution, redirection or newline), so each step runs there."""
     cwd = os.path.abspath(cwd)
     calls, where, places = [], cwd, {}
+    chained = re.fullmatch(r"[^|&()\n`$<>{}]*(&&[^|&()\n`$<>{}]*)*", command) is not None
+    here = lambda: [where] if chained and where != cwd else list(dict.fromkeys([where, cwd]))
     for program, arguments, segment in simple_commands(command, powershell):
         if program == "export":
             places.update(match.groups() for match in map(GIT_PLACE.fullmatch, arguments) if match)
@@ -649,15 +653,18 @@ def reaches_main(command, cwd, powershell=False):
             target = next((word for word in arguments if not word.startswith("-")), None)
             if target and ROOTED.match(target) and os.path.isdir(folder_of(target, where)):
                 where = os.path.abspath(folder_of(target, where))
+                chained = chained and bool(git_out(where, "rev-parse", "--show-toplevel"))
+            else:
+                chained = False
         elif program == "git":
             name, rest, _ = git_command(arguments)
             start = next((i for i, word in enumerate(segment) if program_name(word) == "git"), 0)
             local = dict(places)
             local.update(match.groups() for match in map(GIT_PLACE.fullmatch, segment[:start]) if match)
             if name in ("push", "merge", "checkout", "switch"):
-                calls.append((program, name, rest, git_folders(arguments, local, list(dict.fromkeys([where, cwd])))))
+                calls.append((program, name, rest, git_folders(arguments, local, here())))
         elif program in ("gh", "glab"):
-            calls.append((program, "", arguments, list(dict.fromkeys([where, cwd]))))
+            calls.append((program, "", arguments, here()))
     if not any(name in ("push", "merge") or (program != "git" and merges_pull_request(rest))
                for program, name, rest, _ in calls):
         return None
