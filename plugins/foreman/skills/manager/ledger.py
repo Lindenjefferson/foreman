@@ -761,10 +761,12 @@ def cycle_state(cycle, autonomous=False, extended=None, interface=False):
         need("no dev task yet", "dev")
     if pending:
         return state, pending
-    # A review of the dev's own tip, added before the dev's add (its suite was still running), covers that run.
+    # A review of the dev's own tip, added before the dev's add (its suite was still running), covers that run when
+    # every dev run after the review ends at that tip; in a later cycle the early review closes with the cycle before.
     # shortcut: equality only; a review of a later commit that contains the tip still asks again, upgrade with git.
-    if last_review < last_dev and not (reviews and cycle[last_dev].get("tip")
-                                       and reviews[-1].get("head") == cycle[last_dev]["tip"]):
+    if last_review < last_dev and not (reviews and all(
+            run.get("tip") and run["tip"] == reviews[-1].get("head")
+            for run in cycle[last_review + 1:] if run["agent"] == "dev")):
         need("reviewer has not reviewed the latest changes", "reviewer")
     elif reviews[-1]["verdict"] == "FAIL":
         need(f"reviewer FAIL ({reviews[-1]['open']} open{where(reviews[-1])}): dev fixes every finding in one batch",

@@ -233,6 +233,8 @@ def reserve(projeto, nome, rotulos, gb, free, fits, esperando=False):
             elif esperando and new:  # only the finishing labels: the new jobs keep their place
                 d["pedidos"].append({"projeto": projeto, "nome": nome, "gb": gb, "copias": len(new), "desde": since,
                                      "renovado": iso(at)})
+            elif esperando and request:  # another caller's request of this project stays as it was
+                d["pedidos"].append(request)
             d["reservas"] = [r for r in d["reservas"] if not (r.get("projeto") == projeto and r.get("rotulo") in granted)]
             d["reservas"] += [{"projeto": projeto, "nome": nome, "rotulo": r, "gb": gb, "desde": iso(at),
                                "renovada": iso(at)} for r in granted]

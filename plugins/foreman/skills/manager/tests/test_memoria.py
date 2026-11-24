@@ -121,6 +121,10 @@ memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4))
 check("a finishing grant keeps the project's place in the queue",
       [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"] == mine and mine, memoria.load()["pedidos"])
 memoria.release("h", "manager:t1")
+memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4), esperando=True)
+check("a waiting call with only finishing labels keeps the project's place too",
+      [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"] == mine, memoria.load()["pedidos"])
+memoria.release("h", "manager:t1")
 got, _, _ = memoria.reserve("h", "H", ["manager:manager:t1"], 4, 20, one_per(4, 4))
 check("a chained manager: label is not a finishing one", got == [], got)
 

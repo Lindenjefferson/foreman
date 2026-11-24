@@ -3299,6 +3299,20 @@ with open(tip_ledger, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(entry) + "\n")
 check("a review of the dev's own tip, recorded before the dev's add, still counts",
       "reviewer has not reviewed the latest changes" not in status(tip_ledger)["pending"], status(tip_ledger)["pending"])
+two_ledger = os.path.join(night, "two.jsonl")
+with open(two_ledger, "w", encoding="utf-8") as handle:
+    for entry in ({"type": "start", "slug": "t", "base": head()},
+                  {"type": "run", "agent": "reviewer", "task": "", "verdict": "PASS", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": "a" * 40, "at": "2030-01-01T00:01:00+00:00"},
+                  {"type": "run", "agent": "dev", "task": "B", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": head(), "tip": "b" * 40,
+                   "at": "2030-01-01T00:02:00+00:00"},
+                  {"type": "run", "agent": "dev", "task": "A", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": head(), "tip": "a" * 40,
+                   "at": "2030-01-01T00:03:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+check("a dev run between that review and the last dev still asks for a review",
+      "reviewer has not reviewed the latest changes" in status(two_ledger)["pending"], status(two_ledger)["pending"])
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
