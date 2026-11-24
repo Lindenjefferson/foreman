@@ -406,8 +406,9 @@ FOREMAN_MEMORIA_INTERVALO seconds, 30 by default) in turn, until a label is rese
 (FOREMAN_MEMORIA_TETO, 7200 s) passes (exit 1, its request withdrawn). With the floor or the memory unknown, or a
 memory file that cannot be read (named in the reason, never overwritten), capacity decides alone, as with no label.
 A successful add of a dev run or a release frees its task's reservation, an add of a qa run frees qa, and liberar
-frees any label. Every command renews the project's reservations, unless FOREMAN_MEMORIA_LEITURA is set (the hub's
-read), so one a dead session left expires.
+frees any label. A label is 1 to 60 of A-Z a-z 0-9 . _ : -. Every command but status --json (the mod's and the
+hub's read) renews the project's reservations, so one a dead session left expires. The project is the repository's
+main worktree, so a front's ledger in a worktree reserves and frees as the same project.
 
 Free disk
 ---------
@@ -425,6 +426,7 @@ Without --ledger, the ledger is .superpowers/ledger.jsonl at the root of the cur
 when the current one has none (a task worktree), except for start, which always uses the current one. A line that is
 not JSON stops every command with its line number, so a truncated write is never skipped silently."""
 import argparse
+import contextlib
 import datetime
 import json
 import os
@@ -2686,9 +2688,13 @@ def capacity(args):
     root = project_root(args.ledger)
     setting = capacity_settings(os.path.join(root, "CLAUDE.local.md"))
     free_mode = autonomous(entries)
-    projeto, nome = memoria.key(root), os.path.basename(root)
+    projeto = memoria_key(args.ledger)
+    nome = os.path.basename(projeto)
     if args.esperar and not args.rotulo:
         sys.exit("--esperar takes --rotulo, the label of each job it reserves for")
+    wrong = [label for label in args.rotulo if not memoria.LABEL.fullmatch(label)]
+    if wrong:
+        sys.exit(f"--rotulo {wrong[0]!r}: a label is 1 to 60 of A-Z a-z 0-9 . _ : - (a task id, qa, manager:<task>)")
 
     def measure():
         return (probed("FOREMAN_CAPACITY_MEMORY_GB", free_memory_gb),
@@ -2714,16 +2720,21 @@ def capacity(args):
                                                               esperando=args.esperar)
             except memoria.Busy as busy:
                 granted, shared, impossible = [], f"{busy} stayed held", False
+            except (memoria.Corrupt, OSError):
+                granted, impossible = [], True
+                shared = f"{memoria.path()} unreadable: nothing reserved; fix or delete it"
             if granted or impossible or not args.esperar or time.time() >= end:
                 break
             time.sleep(float(os.environ.get("FOREMAN_MEMORIA_INTERVALO") or 30))
             memory, disk = measure()
         if args.esperar and not granted:
-            memoria.withdraw(projeto)
+            with contextlib.suppress(memoria.Busy, memoria.Corrupt, OSError):
+                memoria.withdraw(projeto)
         dispatch, _, notes, reason = sizing(memory, disk, setting, free_mode)
         dispatch, copies = bool(granted), len(granted)
     else:
-        dispatch, copies, notes, reason = sizing(None if memory is None else memory - others, disk, setting, free_mode)
+        dispatch, copies, notes, reason = sizing(None if memory is None else max(0.0, memory - others), disk, setting,
+                                                 free_mode)
         if others:
             notes.append(f"other projects reserve {others:g} GB, taken off the free memory")
     if shared:
@@ -2748,8 +2759,19 @@ def project_root(ledger):
     return os.path.dirname(os.path.dirname(os.path.abspath(ledger)))
 
 
+def memoria_key(ledger):
+    """The memory file's project: the main worktree, through git, so every worktree's ledger of one repository is one
+    project; the ledger's root outside git."""
+    common = git_ok(os.path.dirname(os.path.abspath(ledger)) if os.path.isdir(os.path.dirname(os.path.abspath(ledger)))
+                    else None, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return memoria.key(os.path.dirname(common) if common else project_root(ledger))
+
+
 def liberar(args):
-    count = memoria.release(memoria.key(project_root(args.ledger)), args.rotulo)
+    try:
+        count = memoria.release(memoria_key(args.ledger), args.rotulo)
+    except (memoria.Busy, memoria.Corrupt, OSError) as problem:
+        sys.exit(f"{problem}: memory file busy or unreadable; nothing released")
     print(f"released {count} reservation{'' if count == 1 else 's'} {args.rotulo}")
 
 
@@ -2936,14 +2958,14 @@ def main():
     global NEEDS_INTERFACE
     NEEDS_INTERFACE = interface_line(args.ledger)
     preparation_only(args)
-    projeto = memoria.key(project_root(args.ledger))
-    if not os.environ.get("FOREMAN_MEMORIA_LEITURA"):  # the hub's read leaves a dead session's reservation to expire
-        memoria.renew(projeto)
+    shared = os.path.exists(memoria.path())  # no file, no reservation to renew or free: no git call per command
+    if shared and not (args.command == "status" and args.json):  # the mod's and the hub's read keep no dead session's
+        memoria.renew(memoria_key(args.ledger))
     args.run(args)
     label = freed_label(args)
-    if label:
+    if label and shared:
         try:
-            memoria.release(projeto, label)
+            memoria.release(memoria_key(args.ledger), label)
         except (memoria.Busy, memoria.Corrupt, OSError) as problem:
             print(f"memory reservation {label} not released ({problem}): ledger.py liberar --rotulo {label}",
                   file=sys.stderr)

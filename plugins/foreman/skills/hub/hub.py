@@ -53,8 +53,9 @@ Rules
 Memory: status reads the memory file and lists, under "memoria", its live reservations and waiting requests, and the
 priorities ("memory:" lines in the text); a file that cannot be read is the warning "memoria unreadable: <path>".
 set --prioridade and liberar address a project by name and write it by its folder, as ledger.py keys it (memoria.key),
-so a project outside the root needs add first. ledger.py status runs with FOREMAN_MEMORIA_LEITURA=1, so the hub's read
-never renews a reservation: one that a dead session left expires after 2 h, or the owner frees it with liberar.
+so a project outside the root needs add first. ledger.py status --json never renews a reservation, so the hub's read
+leaves one that a dead session left to expire after 2 h, or the owner frees it with liberar. Text from the memory file
+(names, labels, times) is cleaned like a project's.
 
 delegate refuses an unknown project, a missing folder and a half update, then stores {"texto", "em"} and the estado
 "enviado" ("nao-entregue" with the flag); the text is only stored, never run. status derives "sem-resposta" (and
@@ -245,7 +246,7 @@ def entrega_de(pasta):
     if not os.path.isfile(os.path.join(pasta, ".superpowers", "ledger.jsonl")):
         return None
     # FOREMAN_CAPACITY_DISK_GB=unknown: ledger.py then skips its disk watch, which would write disk.json here
-    env = {**os.environ, "FOREMAN_CAPACITY_DISK_GB": "unknown", "FOREMAN_MEMORIA_LEITURA": "1"}
+    env = {**os.environ, "FOREMAN_CAPACITY_DISK_GB": "unknown"}
     own = os.path.join(pasta, ".superpowers", "ledger.jsonl")  # never a parent repo's ledger
     try:
         r = subprocess.run([sys.executable, LEDGER, "--ledger", own, "status", "--json"], cwd=pasta, env=env,
@@ -365,6 +366,10 @@ def listing(raiz, dados, agora, sistema):
     projetos.sort(key=rank)
     try:
         mem = memoria.load()
+        for item in mem["reservas"] + mem["pedidos"]:
+            for k in ("nome", "rotulo", "desde", "projeto"):
+                if k in item:
+                    item[k] = clean(item[k], 300)
     except (memoria.Corrupt, OSError):
         mem = None
         avisos.append(f"memoria unreadable: {memoria.path()}")

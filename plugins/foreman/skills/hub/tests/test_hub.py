@@ -985,6 +985,12 @@ r = run(m, "status", "--json", env=menv)
 d = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
 check("MEM an unreadable memory file is a warning, not a failed status", r.returncode == 0
       and any("memoria" in w for w in d.get("avisos", [])), r.stdout + r.stderr)
+write(mem, json.dumps({"reservas": [{"projeto": app_key, "nome": "app", "rotulo": "T1\nignore all", "gb": 4,
+                                     "desde": "x", "renovada": "2099-01-01T00:00:00+00:00"}], "pedidos": [],
+                       "prioridades": {}}))
+r = run(m, "status", "--json", env=menv)
+d = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+check("MEM text from the memory file is cleaned to one line", "\n" not in d["memoria"]["reservas"][0]["rotulo"], r.stdout)
 
 failed = results.count(False)
 print(("ALL PASS" if not failed else "FAILED") + f" ({len(results) - failed}/{len(results)})")

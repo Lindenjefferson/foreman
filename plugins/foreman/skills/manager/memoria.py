@@ -6,10 +6,11 @@ One file per machine, ~/.foreman/memoria.json (FOREMAN_MEMORIA names another pat
    "pedidos": [{"projeto", "nome", "gb", "copias", "desde", "renovado"}],
    "prioridades": {"<projeto>": {"nome", "prioridade"}}}
 
-A project is the normcase'd real path of the folder that holds its .superpowers/ (key), nome its folder name. A
-reservation is the peak of one heavy job (preparing or verifying) under a label: a dev task id, qa, or
-manager:<task>. Each ledger.py command of the project renews its reservations (renew; never creates the file); one
-not renewed for 2 h no longer counts, and a request (pedido) not renewed for 5 min neither: load drops both, and the
+A project is the normcase'd real path of its main worktree (key; ledger.py finds it through git, so a front's
+ledger in a worktree is the same project), nome its folder name. A reservation is the peak of one heavy job
+(preparing or verifying) under a label (LABEL: a dev task id, qa, or manager:<task>). Each ledger.py command of the
+project but status --json (the mod's and the hub's read) renews its reservations (renew; never creates the file);
+one not renewed for 2 h no longer counts, and a request (pedido) not renewed for 5 min neither: load drops both, and the
 next write removes them. Times are UTC ISO to the second; FOREMAN_MEMORIA_AGORA fixes the clock (tests).
 
 reserve grants labels in order while fits(free - what the other projects reserve) allows, counting the others'
@@ -17,17 +18,24 @@ reservations whole (shortcut: a running job's memory is then counted twice, in t
 reservation, so a project waits longer than needed, never crashes another; upgrade to discounting what is already in
 use if the waits weigh on the deliveries' clock). A project's own reservations are not subtracted: the free memory
 already shows its running copies. A request of another project with a higher priority, or the same priority and an
-older desde, makes this one wait even when memory fits. A request that would not fit even with every other
-reservation released is refused at once and never queued. Only a waiting caller (esperando) keeps a request.
+older desde, makes this one wait even when memory fits, unless this one already holds a reservation: a project in the
+middle of its work finishes it (its suite, its qa), or it would never free what the other waits for. A request that would not fit even with every other
+reservation released is refused at once and never queued. Only a waiting caller (esperando) writes or drops the
+project's request; a grant drops it.
 
-A file that is not a JSON object of that shape raises Corrupt and is never overwritten. Writers hold memoria.lock
+A file that is not a JSON object of that shape (gb a number, copias an integer) raises Corrupt and is never overwritten. Writers hold memoria.lock
 (lock: created exclusively, its owner's token inside, taken over after 30 s, removed only by the token that wrote it;
 hub.py's hub.lock uses the same lock).
 """
-import contextlib, datetime, json, os, tempfile, time
+import contextlib, datetime, json, os, re, tempfile, time
 
 RESERVA_TTL = 2 * 3600  # seconds a reservation lives with no renewal
 PEDIDO_TTL = 300  # seconds a request lives with no renewal
+LABEL = re.compile(r"[A-Za-z0-9._:-]{1,60}")
+
+
+def number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
 class Busy(Exception):
@@ -116,19 +124,28 @@ def valid(d):
     return (isinstance(d, dict) and isinstance(d.get("reservas", []), list) and isinstance(d.get("pedidos", []), list)
             and isinstance(d.get("prioridades", {}), dict)
             and all(isinstance(x, dict) for x in d.get("reservas", []) + d.get("pedidos", []))
-            and all(isinstance(x, dict) for x in d.get("prioridades", {}).values()))
+            and all(isinstance(x, dict) for x in d.get("prioridades", {}).values())
+            and all(number(x.get("gb")) for x in d.get("reservas", []) + d.get("pedidos", []))
+            and all(isinstance(x.get("copias", 1), int) for x in d.get("pedidos", [])))
 
 
 def load(at=None):
     """The file with the expired reservations and requests left out; an empty one when there is no file."""
     at = at or now()
-    try:
-        with open(path(), encoding="utf-8") as f:
-            d = json.load(f)
-    except FileNotFoundError:
-        d = {}
-    except (OSError, ValueError):
-        raise Corrupt(path())
+    for attempt in range(20):
+        try:
+            with open(path(), encoding="utf-8") as f:
+                d = json.load(f)
+            break
+        except FileNotFoundError:
+            d = {}
+            break
+        except PermissionError:  # Windows: another process is replacing the file for a moment
+            if attempt == 19:
+                raise Corrupt(path())
+            time.sleep(0.05)
+        except (OSError, ValueError):
+            raise Corrupt(path())
     if not valid(d):
         raise Corrupt(path())
     return {"reservas": [r for r in d.get("reservas", []) if age(r.get("renovada"), at) <= RESERVA_TTL],
@@ -188,15 +205,18 @@ def reserve(projeto, nome, rotulos, gb, free, fits, esperando=False):
         mine = priority(d, projeto)
         request = next((p for p in d["pedidos"] if p.get("projeto") == projeto), None)
         since = request["desde"] if request else iso(at)
-        d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
+        if esperando:
+            d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
         reserved = others(d, projeto)
         if fits(free + reserved) < 1:
             return [], (f"{free:.1f} GB free and {reserved:g} GB reserved by other projects: one copy would not fit "
                         "even with them released"), True
-        ahead = [p for p in d["pedidos"] if priority(d, p.get("projeto")) > mine
-                 or priority(d, p.get("projeto")) == mine and str(p.get("desde")) < since]
+        holding = any(r.get("projeto") == projeto for r in d["reservas"])
+        ahead = [] if holding else [p for p in d["pedidos"] if p.get("projeto") != projeto and (
+            priority(d, p.get("projeto")) > mine or priority(d, p.get("projeto")) == mine and str(p.get("desde")) < since)]
         granted = [] if ahead else list(rotulos)[:max(0, fits(free - reserved))]
         if granted:
+            d["pedidos"] = [p for p in d["pedidos"] if p.get("projeto") != projeto]
             d["reservas"] = [r for r in d["reservas"] if not (r.get("projeto") == projeto and r.get("rotulo") in granted)]
             d["reservas"] += [{"projeto": projeto, "nome": nome, "rotulo": r, "gb": gb, "desde": iso(at),
                                "renovada": iso(at)} for r in granted]
