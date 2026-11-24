@@ -1297,16 +1297,18 @@ def heartbeat(entries, auto):
 
 def delivery_tree(ledger, entries):
     """Where the gate's checks read the delivery: the worktree the command runs in, when the ledger is the main
-    worktree's, that worktree is of the same repository and it is no task's or preparation's worktree (the delivery
+    worktree's, that worktree is of the same repository and it is no claim's in flight nor a preparation's worktree (the delivery
     branch may live in a worktree of its own); else the ledger's root, a front's own worktree included."""
     root = project_root(ledger)
     top = git_ok(None, "rev-parse", "--show-toplevel")
     if not top or memoria.key(root) != memoria_key(ledger):
         return root
     common = git_ok(top, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    others = {memoria.key(entry["worktree"]) for entry in entries if entry.get("worktree")}
+    # only claims in flight: a closed one (a fix-N run in the delivery's own worktree) no longer marks a task's tree
+    others = {memoria.key(entry["worktree"]) for entry in claims(entries).values() if entry.get("worktree")}
     for _, prepared in queued(ledger):  # a preparation's worktree and its claims' live in next-<slug>.jsonl
-        others |= {memoria.key(item["worktree"]) for item in prepared if item.get("worktree")}
+        others |= {memoria.key(item["worktree"]) for item in prepared[:1] + list(claims(prepared).values())
+                   if item.get("worktree")}
     if common and memoria.key(os.path.dirname(common)) == memoria_key(ledger) and memoria.key(top) not in others:
         return top
     return root

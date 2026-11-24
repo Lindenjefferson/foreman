@@ -3426,5 +3426,21 @@ blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().
 check("from a preparation's worktree the checks read the ledger's root", any("not in this history" in b for b in blockers),
       blockers)
 
+# night 7: a closed claim that named the delivery's own worktree (a fix-N run there) does not hide that worktree
+os.remove(os.path.join(fq, ".superpowers", "next-nx.jsonl"))
+with open(fq_ledger, "a", encoding="utf-8") as handle:
+    for entry in ({"type": "release", "task": "F2", "at": "2030-01-01T00:04:00+00:00"},
+                  {"type": "claim", "task": "fix-1", "worktree": fq_tree, "head": fq_head, "at": "2030-01-01T00:05:00+00:00"},
+                  {"type": "run", "agent": "dev", "task": "fix-1", "verdict": "DONE", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": fq_base, "at": "2030-01-01T00:06:00+00:00"},
+                  {"type": "run", "agent": "reviewer", "task": "", "verdict": "PASS", "open": 0, "critical": 0,
+                   "important": 0, "minor": 0, "origin": {}, "head": fq_head, "at": "2030-01-01T00:07:00+00:00"}):
+        handle.write(json.dumps(entry) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", fq_ledger, "status", "--json"], cwd=fq_tree,
+                   capture_output=True, text=True, encoding="utf-8")
+blockers = json.loads(r.stdout).get("full_qa_blockers", []) if r.stdout.strip().startswith("{") else [r.stderr]
+check("a closed claim on the delivery's worktree keeps it read", not any("not in this history" in b for b in blockers),
+      blockers)
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

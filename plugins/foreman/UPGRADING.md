@@ -4,6 +4,12 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.3 — worktree da entrega com claims fechados
+
+- **O `add --full` lê a worktree da entrega mesmo depois de uma `fix-N` rodar nela** (defeito): num projeto do autor, os claims das `fix-N` nomeavam a própria worktree da entrega, e a 1.16.2 tratava toda worktree já nomeada por um claim como worktree de tarefa, voltando a ler a `main` e a recusar a suíte inteira. Agora só contam os claims em voo e os das entregas em preparação. Número: recusas do `--full` com "not in this history" numa entrega em worktree (meta 0).
+
+**Ao atualizar:** nada muda. Sai o contorno de registrar a suíte inteira ou a reverificação sem `--full`/`--after-full`, com uma nota.
+
 ## 1.16.2 — `qa` com várias cópias e entrega numa worktree
 
 - **O `add` de um `qa` libera todas as reservas das cópias dele** (defeito): os dois projetos do autor rotularam as cópias do `qa` como `qa-ciclo6` e `qa-full-1` a `qa-full-api`, e o `add` só liberava o rótulo `qa`; a reserva de um `qa` já terminado seguia renovada pelos comandos do projeto, segurando 4 GB do outro. Agora o `add` do `qa` libera `qa`, `qa-<n>` e `qa:<n>`, menos um rótulo que seja id de tarefa do ledger. Número: reservas de `qa` vivas depois do `add` dele (meta 0).
