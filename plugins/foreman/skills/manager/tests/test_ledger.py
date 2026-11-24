@@ -3314,5 +3314,15 @@ with open(two_ledger, "w", encoding="utf-8") as handle:
 check("a dev run between that review and the last dev still asks for a review",
       "reviewer has not reviewed the latest changes" in status(two_ledger)["pending"], status(two_ledger)["pending"])
 
+# night 2: the reason of a mediated capacity shows the free memory after the other projects' reservations
+me, mf = mem_project("reason-a", peak="`4`", floor="`4`"), mem_project("reason-b", peak="`2.5`", floor="`4`")
+mem_json(me, "A1", "A2", memory="12")
+r, got = mem_json(mf, "B1", "B2", "B3", "B4", memory="12.3")
+check("a mediated capacity's reason counts the other projects' reservations", got.get("reserved") == ["B1"]
+      and got.get("reason", "").startswith("4.3 GB free") and "no parallel copy" in got.get("reason", ""), got)
+mem_run(me, "liberar", "--rotulo", "A1")
+mem_run(me, "liberar", "--rotulo", "A2")
+mem_run(mf, "liberar", "--rotulo", "B1")
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

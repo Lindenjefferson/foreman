@@ -125,6 +125,17 @@ memoria.reserve("h", "H", ["manager:t1"], 4, 20, one_per(4, 4), esperando=True)
 check("a waiting call with only finishing labels keeps the project's place too",
       [p["desde"] for p in memoria.load()["pedidos"] if p["projeto"] == "h"] == mine, memoria.load()["pedidos"])
 memoria.release("h", "manager:t1")
+FILE = os.path.join(folder, "outra", "memoria.json")  # a fresh file: no queue left by the cases above
+os.environ["FOREMAN_MEMORIA"] = FILE
+memoria.reserve("q", "Q", ["big"], 8, 20, one_per(8, 4))
+memoria.reserve("p", "P", ["u1"], 4, 20, one_per(4, 4))
+memoria.reserve("p", "P", ["manager:u1"], 4, 10, one_per(4, 4), esperando=True)  # 10 - 8 leaves no room yet
+check("a waiting call with only finishing labels writes no request", not [p for p in memoria.load()["pedidos"]
+                                                                          if p["projeto"] == "p"], memoria.load())
+memoria.release("q")
+memoria.release("p")
+FILE = os.path.join(folder, "maquina", "memoria.json")  # back to the shared file of the cases around
+os.environ["FOREMAN_MEMORIA"] = FILE
 got, _, _ = memoria.reserve("h", "H", ["manager:manager:t1"], 4, 20, one_per(4, 4))
 check("a chained manager: label is not a finishing one", got == [], got)
 

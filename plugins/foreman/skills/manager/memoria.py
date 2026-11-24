@@ -239,9 +239,11 @@ def reserve(projeto, nome, rotulos, gb, free, fits, esperando=False):
             d["reservas"] += [{"projeto": projeto, "nome": nome, "rotulo": r, "gb": gb, "desde": iso(at),
                                "renovada": iso(at)} for r in granted]
             return granted, f"reserved {gb:g} GB each (other projects reserve {reserved:g} GB)", False
-        if esperando:
-            d["pedidos"].append({"projeto": projeto, "nome": nome, "gb": gb, "copias": len(rotulos), "desde": since,
+        if esperando and new:
+            d["pedidos"].append({"projeto": projeto, "nome": nome, "gb": gb, "copias": len(new), "desde": since,
                                  "renovado": iso(at)})
+        elif esperando and request:  # finishing labels wait for memory, never for a turn: no request of their own
+            d["pedidos"].append(request)
         if ahead:
             first = ahead[0]
             return [], (f"waits for {first.get('nome')} (priority {priority(d, first.get('projeto')):g}), asking "

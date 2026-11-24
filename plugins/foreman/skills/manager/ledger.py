@@ -2737,7 +2737,9 @@ def capacity(args):
         if args.esperar and not granted:
             with contextlib.suppress(memoria.Busy, memoria.Corrupt, OSError):
                 memoria.withdraw(projeto)
-        dispatch, _, notes, reason = sizing(memory, disk, setting, free_mode)
+        with contextlib.suppress(memoria.Corrupt, OSError):  # the reason shows what was left for this project
+            others = memoria.others(memoria.load(), projeto)
+        dispatch, _, notes, reason = sizing(max(0.0, memory - others), disk, setting, free_mode)
         dispatch, copies = bool(granted), len(granted)
     else:
         dispatch, copies, notes, reason = sizing(None if memory is None else max(0.0, memory - others), disk, setting,
