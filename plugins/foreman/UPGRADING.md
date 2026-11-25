@@ -4,6 +4,13 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.7 — head da entrega pela branch e uso por sessão
+
+- **O head da entrega vem da branch que o `start` gravou** (defeito; um projeto do autor, foreman 1.16.0 a 1.16.6, decisão do dono): com o ledger na pasta principal, de volta à `main`, e a branch da entrega numa worktree, o `add`, o `claim` e o `status` liam o HEAD da `main` como head da entrega ("delivery head is now <main>"), e as worktrees de tarefa já integradas não apareciam como sobra. Agora o `start` grava a branch em que roda (quando não é a `--base`), e o head da entrega é o dessa branch; ledger sem branch gravada, ou com a branch apagada, segue lendo o HEAD da pasta do ledger. Número: runs com o head da `main` numa entrega em worktree (meta 0).
+- **O uso da conta é gravado por sessão** (defeito; um app do autor, foreman 1.16.5, decisão do dono): duas contas no mesmo projeto gravavam o mesmo `usage.json`, e o `status` de uma sessão podia mostrar a semana da outra conta. Agora o mod grava `usage-<id da sessão>.json`, e o `ledger.py` lê o da própria sessão (`CLAUDE_CODE_SESSION_ID`), ou o `usage.json` quando ele não existe. Número: sessões com o uso de outra conta no `status` (meta 0).
+
+**Ao atualizar:** nada muda. Uma entrega já começada não tem a branch gravada e segue lendo o HEAD da pasta do ledger até o próximo `start`. O `usage.json` antigo fica na pasta do ledger até a primeira gravação do mod novo e pode ser apagado depois dela. Sai o contorno de conferir o uso com `cc -l` com duas contas abertas no mesmo projeto.
+
 ## 1.16.6 — correções da vigia noturna
 
 Defeitos vistos com dois projetos do autor no modo autônomo, numa noite.
