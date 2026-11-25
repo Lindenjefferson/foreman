@@ -1192,6 +1192,16 @@ check("no usage.json and no Sempre econômico: usage is null and the cycle is un
       state["usage"] is None and state["ready_for_gate"] is True and "usage" not in lines_of(ledger)[1],
       state.get("usage"))
 check("no usage.json: the text has no usage line", "usage:" not in run("status", ledger=ledger).stdout)
+# two accounts in one project: each session's mod writes usage-<session id>.json, and ledger.py reads its own
+ledger = usage_case("own-session", {"seven_day": window(8, 100)})
+with open(os.path.join(repo, "u", "own-session", ".superpowers", "usage-s-own.json"), "w", encoding="utf-8") as handle:
+    handle.write(json.dumps({"at": stamp(0), "windows": {"seven_day": window(55, 100)}}))
+own = subprocess.run([sys.executable, LEDGER, "--ledger", ledger, "status"], cwd=repo, capture_output=True, text=True,
+                     encoding="utf-8", env={**os.environ, "CLAUDE_CODE_SESSION_ID": "s-own"}).stdout
+alone = subprocess.run([sys.executable, LEDGER, "--ledger", ledger, "status"], cwd=repo, capture_output=True,
+                       text=True, encoding="utf-8", env={**os.environ, "CLAUDE_CODE_SESSION_ID": "s-new"}).stdout
+check("status reads the usage of its own session's file, else usage.json (older mods, a session with none yet)",
+      "week 55%" in own and "week 8%" in alone, (own, alone))
 
 got = advice("low", {"five_hour": window(59), "seven_day": window(59)})
 check("under every default threshold: windows as read, no economy, no wait",

@@ -344,8 +344,9 @@ advice, never pending, like usage.
 Account usage
 -------------
 
-status also reads usage.json from the ledger's folder (the subscription windows the mod writes: five_hour and
-seven_day, each {percent, resets_at}; a window past its resets_at, a missing or broken file and unknown fields are
+status also reads usage-<CLAUDE_CODE_SESSION_ID>.json from the ledger's folder, else usage.json (an older mod's, or a
+session whose mod wrote none yet), since two accounts may work in one project (the subscription windows the mod
+writes for its own session: five_hour and seven_day, each {percent, resets_at}; a window past its resets_at, a missing or broken file and unknown fields are
 ignored; a null resets_at counts as valid; a JSON error is retried once after 200 ms, as the mod's write is not
 atomic; a file still broken is named once in the text) and the optional thresholds in CLAUDE.local.md at the root of
 the ledger's worktree (Economia a partir de quanto uso, em %, default 60; Pausa a partir de quanto uso da janela de 5
@@ -1039,7 +1040,10 @@ def tally(flag, names, text, total):
 
 def usage_files(ledger):
     folder = os.path.dirname(os.path.abspath(ledger))
-    return os.path.join(folder, "usage.json"), os.path.join(os.path.dirname(folder), "CLAUDE.local.md")
+    # each session's mod writes its own account's windows; usage.json is an older mod's, or a session with none yet
+    own = os.path.join(folder, f"usage-{os.environ.get('CLAUDE_CODE_SESSION_ID', '')}.json")
+    usage = own if os.environ.get("CLAUDE_CODE_SESSION_ID") and os.path.exists(own) else os.path.join(folder, "usage.json")
+    return usage, os.path.join(os.path.dirname(folder), "CLAUDE.local.md")
 
 
 def usage_settings(path):
