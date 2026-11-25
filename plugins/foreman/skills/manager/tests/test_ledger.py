@@ -1369,6 +1369,24 @@ state = margin_case("mg6", [10, 40, 41, 41, 30, 32, 33], 83)
 check("zero and negative deltas are skipped; the last 5 positive deltas are 1, 1, 2, 1 and 30",
       state["usage"]["wait"]["margin"] == 30, state["usage"])
 
+def usage_margins_of(ledger):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ledger_margins", LEDGER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.usage_margins(module.read(os.path.join(repo, ledger)))
+
+
+ledger = usage_case("acct", {"seven_day": window(53, 90)})
+for percent, hours in ((53, 90), (8, 150), (8, 150), (55, 90)):  # another account's session wrote usage.json between
+    with open(os.path.join(repo, "u", "acct", ".superpowers", "usage.json"), "w", encoding="utf-8") as handle:
+        json.dump({"windows": {"seven_day": window(percent, hours)}}, handle)
+    add("reviewer", "PASS", ledger=ledger)
+state = status(ledger)
+check("a jump between snapshots of two windows (another account's usage.json in between) is no per-run margin: "
+      "53 to 55 of the same window is", state["usage"]["wait"] is None and usage_margins_of(ledger) == {"seven_day": 2},
+      (state["usage"], usage_margins_of(ledger)))
+
 state = margin_case("sl1", [10], 90, hours=2.2)
 wait = state["usage"]["wait"]
 text = run("status", ledger="u/sl1/.superpowers/ledger.jsonl").stdout

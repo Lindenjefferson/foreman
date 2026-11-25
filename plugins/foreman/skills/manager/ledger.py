@@ -351,10 +351,12 @@ status --json gives usage: {windows, economy, wait} or null: economy is the reas
 threshold, or Sempre econômico) or null; wait is the window whose percent plus its margin is at or above its pause
 threshold (the one that resets later when both are) or null: {window, percent, margin, resets_at, seconds_left}.
 
-The margin is the largest of the last 5 positive deltas between consecutive usage snapshots of the runs (a negative
-delta is a reset, skipped; 0 with none), the room the next run may use. seconds_left, from now, is null when resets_at
-is; the text line ends with "until <resets_at> (in 2h13m)". It is advice for the manager, never pending: pending,
-steps and ready_for_gate do not change. Every add records the valid windows' percent as usage.
+The margin is the largest of the last 5 positive deltas between consecutive usage snapshots of the runs of the same
+window, the one that resets at the same time within 10 minutes (a negative delta is a reset, skipped; a snapshot of
+another window, such as another account's session writing usage.json in the same folder, is no delta; 0 with none),
+the room the next run may use. seconds_left, from now, is null when resets_at is; the text line ends with "until
+<resets_at> (in 2h13m)". It is advice for the manager, never pending: pending, steps and ready_for_gate do not change.
+Every add records the valid windows' percent as usage and their resets_at as usage_resets.
 
 Diff size and line metrics
 --------------------------
@@ -1087,16 +1089,26 @@ def reset_at(item):
 
 
 def usage_margins(entries):
-    """Per window, the largest of the last 5 positive deltas between consecutive usage snapshots of the runs (a
-    negative delta is a reset in between); 0 with none."""
+    """Per window, the largest of the last 5 positive deltas between consecutive usage snapshots of the runs of the
+    same window, the one resetting at the same time within 10 minutes (a negative delta is a reset in between; a
+    snapshot of another account's window is no delta); 0 with none. A run with no usage_resets (older ledgers) pairs
+    only with another such run."""
     last, deltas = {}, {}
     for entry in runs(entries):
+        resets = entry.get("usage_resets") or {}
         for name, percent in (entry.get("usage") or {}).items():
             if isinstance(percent, bool) or not isinstance(percent, (int, float)):
                 continue
-            if name in last and percent > last[name]:
-                deltas.setdefault(name, []).append(percent - last[name])
-            last[name] = percent
+            reset = reset_at({"resets_at": resets.get(name)}) if "usage_resets" in entry else "unknown"
+            seen = last.setdefault(name, [])
+            same = next((pair for pair in reversed(seen) if pair[0] == reset or (
+                isinstance(pair[0], datetime.datetime) and isinstance(reset, datetime.datetime)
+                and abs((pair[0] - reset).total_seconds()) <= 600)), None)
+            if same and percent > same[1]:
+                deltas.setdefault(name, []).append(percent - same[1])
+            if same:
+                seen.remove(same)
+            seen.append((reset, percent))
     return {name: max(found[-5:]) for name, found in deltas.items()}
 
 
@@ -1256,6 +1268,7 @@ def add(args):
     windows = usage_windows(args.ledger)[0]
     if windows:
         entry["usage"] = {name: item["percent"] for name, item in windows.items()}
+        entry["usage_resets"] = {name: item.get("resets_at") for name, item in windows.items()}
     if NEEDS_INTERFACE and entries[0].get("interface") is False and not any(
             item["type"] == "interface" for item in entries):
         write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
