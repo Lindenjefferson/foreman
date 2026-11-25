@@ -240,7 +240,10 @@ Run head, heartbeat and gate runs
 ---------------------------------
 
 A run's head is --head when given, else the end of the Range: line of its report (a reviewer's) or the Commit: its qa
-report tested, else the HEAD of the ledger's checkout, which may be another delivery's branch.
+report tested, else the delivery head: the head of the branch start was run on (recorded as branch when it is not
+the --base), so a ledger in the main folder, back on the default branch, with the delivery in a worktree of its own,
+still reads the delivery; else (older ledgers, the branch gone) the HEAD of the ledger's checkout. Claims and status
+read the same delivery head.
 
 status --tick, the heartbeat's call, also records a tick; in autonomous mode, status --json gives heartbeat: {minutes,
 since} once the latest tick (or the latest mode entry, before the first tick) is over 30 minutes old, else null, and
@@ -490,6 +493,13 @@ def git_head(rev="HEAD", ledger=None, tree=None):
         if result.returncode == 0:
             return result.stdout.strip()
     return None
+
+
+def delivery_head(entries, ledger):
+    """The head of the branch start recorded (the ledger's folder may be back on the default branch, with the delivery
+    in a worktree of its own), else the ledger folder's HEAD (older ledgers, a branch gone)."""
+    branch = entries[0].get("branch") if entries else None
+    return (git_head(f"refs/heads/{branch}", ledger) if branch else None) or git_head(ledger=ledger)
 
 
 def git_path(*args):
@@ -910,6 +920,8 @@ def start(args):
     named = {"base_ref": args.base} if git_ok(where if os.path.isdir(where) else None, "show-ref", "--verify",
                                               "--quiet", "refs/heads/" + args.base) is not None else {}
     tree = {"worktree": os.path.abspath(args.worktree)} if args.next and args.worktree else {}
+    current = git_ok(where if os.path.isdir(where) else None, "branch", "--show-current")
+    named.update({"branch": current} if current and current != args.base else {})
     if args.next:
         target = next_path(args.ledger, args.slug)
         if os.path.exists(target):
@@ -943,6 +955,7 @@ def start(args):
             lines = [line for line in handle.read().splitlines() if line.strip()]
         opening = {key: value for key, value in json.loads(lines[0]).items() if key not in ("next", "worktree")}
         opening.pop("base_ref", None)
+        opening.pop("branch", None)
         opening.update(base=base, **named, plan=args.plan or opening.get("plan"),
                        promoted=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"))
         os.makedirs(os.path.dirname(os.path.abspath(args.ledger)), exist_ok=True)
@@ -1237,7 +1250,7 @@ def add(args):
     entry = {"type": "run", "agent": args.agent, "task": args.task, "verdict": args.verdict, "open": blocking,
              "critical": args.critical, "important": args.important, "minor": args.minor,
              "origin": tally("--origin", ORIGINS, args.origin, blocking + args.minor),
-             "head": named or git_head(ledger=args.ledger) or ""}
+             "head": named or delivery_head(entries, args.ledger) or ""}
     if later:
         entry["after"] = later
     if args.report:
@@ -1704,7 +1717,7 @@ def claim(args):
         where["origin"] = git_head(args.origin, args.ledger, where.get("worktree"))
         if where["origin"] is None:
             sys.exit(f"--origin is not a commit: {args.origin}")
-    write(args.ledger, {"type": "claim", "task": args.task, **where, "head": git_head(ledger=args.ledger) or ""})
+    write(args.ledger, {"type": "claim", "task": args.task, **where, "head": delivery_head(entries, args.ledger) or ""})
     print(f"claimed {args.task}")
 
 
@@ -2355,7 +2368,7 @@ def status(args):
     closed = not pending
     items = deferred(entries)
     held = in_flight(entries)
-    head = git_head(ledger=args.ledger)
+    head = delivery_head(entries, args.ledger)
     loops, steps = review_state(entries, auto)
     # a task in flight again after a verdict that was not done is no step: its run is pending below
     kept = [(text, step) for text, step in zip(pending, state["steps"]) if step.get("task") not in held]
