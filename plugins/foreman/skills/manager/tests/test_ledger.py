@@ -2832,6 +2832,10 @@ check("a paused delivery gives no heartbeat warning (the night over deletes the 
       status(TRACE)["heartbeat"] is None and "CronList" not in run("status", ledger=TRACE).stdout,
       status(TRACE)["heartbeat"])
 run("resume", ledger=TRACE)
+run("note", "--text", "waits on the owner", "--validar", "--recommend", "accept", ledger=TRACE)
+check("a delivery stopped on a VALIDAR note, nothing in flight: no heartbeat warning (the rule deletes the heartbeat)",
+      status(TRACE)["heartbeat"] is None, status(TRACE)["heartbeat"])
+run("status", "--tick", ledger=TRACE)
 
 # The gate's verdict goes in the ledger
 r = run("gate", "--verdict", "NOT_READY", "--failed", "Ledger,Docs", ledger=TRACE)

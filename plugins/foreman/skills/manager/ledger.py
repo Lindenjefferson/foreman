@@ -245,7 +245,9 @@ report tested, else the HEAD of the ledger's checkout, which may be another deli
 status --tick, the heartbeat's call, also records a tick; in autonomous mode, status --json gives heartbeat: {minutes,
 since} once the latest tick (or the latest mode entry, before the first tick) is over 30 minutes old, else null, and
 the text says to check the heartbeat with CronList; never while the delivery is paused (the night over deletes the
-heartbeat, and a resource pause waits on its background command). It is advice, never pending.
+heartbeat, and a resource pause waits on its background command), nor after a VALIDAR note newer than the latest tick
+with nothing in flight (the delivery stopped for the user, and autonomous.md deletes the heartbeat). It is advice, never
+pending.
 
 gate records a gate.py run (verdict, failed checks); status --json lists them as gates, for the quality report and the
 analysis of where the time went.
@@ -1305,7 +1307,9 @@ HEARTBEAT_MINUTES = 30
 def heartbeat(entries, auto):
     """In autonomous mode, how long since the latest tick (or mode entry): {minutes, since} past 30, else None."""
     marks = [entry["at"] for entry in entries if entry["type"] in ("tick", "mode") and entry.get("at")]
-    if not auto or not marks or paused(entries):
+    stopped = [entry["at"] for entry in entries if entry["type"] == "note" and entry.get("validar") and entry.get("at")]
+    # stopped on a VALIDAR note with nothing in flight: autonomous.md deletes the heartbeat there
+    if not auto or not marks or paused(entries) or (stopped and stopped[-1] > marks[-1] and not claims(entries)):
         return None
     try:
         since = datetime.datetime.fromisoformat(marks[-1])
