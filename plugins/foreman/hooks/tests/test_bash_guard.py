@@ -247,6 +247,21 @@ sh(sys.executable, LEDGER_PY, "mode", "autonomous", "--until", (datetime.datetim
 for command in main_pushes + ("git push", "git merge feat/x", "git merge --no-ff feat/x"):
     check(f"autonomous, on the main branch: denied {command!r}", reaches_main(command))
 check("autonomous, on the main branch: denied 'git push origin @'", reaches_main("git push origin @"))
+work_tree = tempfile.mkdtemp(prefix="guard_wt_")
+os.rmdir(work_tree)
+sh("git", "worktree", "add", "-q", "-b", "work/y", work_tree)
+wt = work_tree.replace("\\", "/")
+for command in (f"cd {wt} && git merge --no-ff main", f"cd {wt}; git merge --ff-only main",
+                f"Set-Location {wt}; git merge --no-ff main"):
+    tool = "PowerShell" if command.startswith("Set-") else "Bash"
+    check(f"autonomous, from the main worktree: a merge into the work branch there passes {command!r}",
+          run(repo, command, tool=tool)[1] is None, str(run(repo, command, tool=tool)))
+for command in (f"(cd {wt} && true); git merge feat/x", f"cd {wt} || git merge feat/x",
+                f"cd {wt} && cd - && git merge feat/x", f"cd {wt} | git merge feat/x"):
+    check(f"autonomous, from the main worktree: a cd the merge may not follow still reads the main branch, denied "
+          f"{command!r}", reaches_main(command))
+sh("git", "worktree", "remove", "--force", work_tree)
+sh("git", "branch", "-D", "work/y")
 with open(os.path.join(repo, "README.md"), "w", encoding="utf-8") as handle:
     handle.write("x\n")
 for command in ("git checkout README.md && git push origin", "git checkout . && git push origin",

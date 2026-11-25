@@ -4,6 +4,13 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.5 — `qa` e merge na worktree da entrega
+
+- **O `qa` que testou o tip do dev não fica stale** (defeito): num projeto do autor, com a entrega numa worktree própria e o ledger na pasta principal, a run do dev de uma `fix-N` gravava como head o da `main`, que tinha andado; o `qa` que testou o commit da `fix-N` saía stale e o `status` pedia o `qa` de novo. Agora o `qa` só é stale quando nem o head nem o tip da última run do dev estão no commit testado. Número: `qa` stale sobre o tip do dev (meta 0).
+- **`git merge` na worktree da entrega passa no modo autônomo** (defeito; mesmo projeto, foreman 1.16.0): `cd <worktree da entrega>; git merge --ff-only <tarefa>` era negado como merge na branch principal, porque o passo era lido também na pasta da sessão. Agora, depois de um `cd` absoluto para uma pasta que existe dentro de um repositório, numa cadeia só de `&&` e `;`, o passo é lido só nessa pasta; com `||`, pipe, subshell ou outro `cd` incerto, segue lido nas duas. Número: merges negados na worktree da entrega (meta 0).
+
+**Ao atualizar:** nada muda. Contornos que saem, se a sessão os tiver: o `cherry-pick` no lugar do `git merge` na worktree da entrega; registrar de novo o `qa` que saiu stale sobre o tip da `fix-N`.
+
 ## 1.16.4 — frente não é sobra
 
 - **O `status` de uma frente não lista a worktree e a branch dela como sobras** (defeito): num projeto do autor, com o ledger na worktree da entrega, o `status` pedia `git worktree remove` da própria worktree e `git branch -d` da própria branch assim que o head dela estava integrado, e a entrega não chegava ao gate. Agora a worktree do ledger e a branch dela contam como trabalho em andamento. Número: sobras que são a frente do próprio ledger (meta 0).

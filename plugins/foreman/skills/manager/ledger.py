@@ -133,7 +133,8 @@ Verdict:, Commit:, Interface: and Processes: lines of qa.md's report (Verdict th
 Processes naming the ports qa started a server on (on that line or the one right below), ports: none when none,
 and none of them still accepting
 connections, on 127.0.0.1 or ::1),
-and the run stores that commit as tested, and stale when it is not the latest dev run's head or later (a run held for
+and the run stores that commit as tested, and stale when it is neither the latest dev run's head or later nor its tip
+or later (a run held for
 a later plan cycle left out): a qa dispatched before a fix counts only for what came before it, so its FAIL still asks
 for the fix and the re-run is still asked for; --seconds takes 90, 12m, 1h5m or 12m30s, and --seconds and --tokens are
 optional, from the agent's completion notification when it already arrived, never an estimate (a run without them goes
@@ -1438,8 +1439,8 @@ def holders(path, found=None):
 
 def qa_report(args, entries):
     """The tested commit of a saved qa report, refused when a line of qa.md's report is missing or disagrees; stale
-    when it is not the latest dev run's head or later (qa was dispatched before that run, as before a fix), a run held
-    for a later plan cycle left out."""
+    when it is neither the latest dev run's head or later nor its tip or later (qa was dispatched before that run, as
+    before a fix), a run held for a later plan cycle left out."""
     path = args.report if os.path.isfile(args.report) else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(args.ledger))), args.report)
     text = open(path, encoding="utf-8", errors="replace").read()
@@ -1469,8 +1470,10 @@ def qa_report(args, entries):
     held = {id(entry) for entry in held_runs(entries)}
     devs = [entry for entry in runs(entries) if entry["agent"] == "dev" and entry.get("head") and id(entry) not in held]
     where = os.path.dirname(os.path.dirname(os.path.abspath(args.ledger)))
-    stale = bool(devs) and subprocess.run(["git", "merge-base", "--is-ancestor", devs[-1]["head"], tested],
-                                          capture_output=True, cwd=where).returncode == 1
+    # a claimed worktree's dev run records the ledger worktree's head, main when the delivery has its own worktree
+    stale = bool(devs) and all(subprocess.run(["git", "merge-base", "--is-ancestor", commit, tested],
+                                              capture_output=True, cwd=where).returncode == 1
+                               for commit in filter(None, (devs[-1]["head"], devs[-1].get("tip"))))
     return {"tested": tested, **({"stale": True} if stale else {})}
 
 

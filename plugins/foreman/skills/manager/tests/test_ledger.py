@@ -3463,5 +3463,26 @@ r = subprocess.run([sys.executable, LEDGER, "--ledger", lo_ledger, "status"], cw
 check("a front's own worktree and branch are no leftovers", "leftover" not in r.stdout and r.returncode == 0,
       (r.stdout, r.stderr))
 
+# night 9: a dev run claimed on the delivery's own worktree, with the ledger's worktree on a main that moved on,
+# records main's head; a qa that tested the dev's tip is still not stale
+subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "main moves on"], cwd=fq, capture_output=True)
+subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "fix-2"], cwd=fq_tree, capture_output=True)
+fix_head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=fq_tree, capture_output=True, text=True).stdout.strip()
+with open(fq_ledger, "a", encoding="utf-8") as handle:
+    handle.write(json.dumps({"type": "claim", "task": "fix-2", "worktree": fq_tree, "head": fq_head,
+                             "at": "2030-01-01T00:08:00+00:00"}) + "\n")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", fq_ledger, "add", "--agent", "dev", "--task", "fix-2",
+                    "--verdict", "DONE"], cwd=fq_tree, capture_output=True, text=True, encoding="utf-8")
+os.makedirs(os.path.join(fq, ".superpowers", "reports"), exist_ok=True)
+with open(os.path.join(fq, ".superpowers", "reports", "qa-fix-2.md"), "w", encoding="utf-8") as handle:
+    handle.write(f"Verdict: PASS\nCommit: {fix_head[:7]}\nInterface: n/a\nProcesses: none left running; ports: none\n")
+r2 = subprocess.run([sys.executable, LEDGER, "--ledger", fq_ledger, "add", "--agent", "qa", "--verdict", "PASS",
+                     "--report", ".superpowers/reports/qa-fix-2.md"], cwd=fq_tree, capture_output=True, text=True,
+                    encoding="utf-8")
+recorded = [json.loads(line) for line in open(fq_ledger, encoding="utf-8")][-1]
+check("a qa that tested the dev's tip in the delivery's own worktree is not stale",
+      r.returncode == 0 and r2.returncode == 0 and recorded.get("agent") == "qa" and not recorded.get("stale"),
+      (r.stderr, r2.stderr, recorded))
+
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)
