@@ -77,9 +77,9 @@ check("the progress mod only reads: no network, model, prompt, tool approval or 
       not ONLY_READS.search(mod) and "'tool.call'" not in mod and "'tool.check'" not in mod, "")
 check("that rule catches a prompt the mod only holds, not just one it calls",
       bool(ONLY_READS.search("const send = $.prompt")), "")
-WRITE = re.compile(r"^write\(\s*(`[^`]*usage\.json`|'[^']*usage\.json'|\"[^\"]*usage\.json\")\s*,")
+WRITE = re.compile(r"^write\(\s*(`[^`]*usage(-\$\{await \$\.session\.id\(\)\})?\.json`|'[^']*usage\.json'|\"[^\"]*usage\.json\")\s*,")
 writes = re.findall(r"\$\.fs\.(?!(?:stat|read\w*|exists|list)\b)(\w+\(.*)", mod)
-check("the progress mod's one file write has a usage.json literal as its first argument",
+check("the progress mod's one file write has a usage(-<session id>).json literal as its first argument",
       len(writes) == 1 and bool(WRITE.match(writes[0])), writes)
 check("that write check rejects a write to anything but a usage.json literal",
       WRITE.match("write(`${folder}usage.json`, body)") and not WRITE.match("write(path, body) // usage.json")
