@@ -4,6 +4,19 @@ O que cada versão entregou e o que muda para quem atualiza. O arquivo vai junto
 
 O fluxo nasceu inspirado no [ECC](https://github.com/affaan-m/ecc) (o pipeline `orch-*`, o `code-reviewer` e o `verification-loop`), em versão enxuta.
 
+## 1.16.6 — correções da vigia noturna
+
+Defeitos vistos com dois projetos do autor no modo autônomo, numa noite.
+
+- **`Touches:` em prosa não vira recurso** (defeito): uma linha como "`a.ts` (só leitura), o resto do módulo" fazia a frase virar um nome de recurso, e duas tarefas sem arquivo em comum colidiam no `claim`. Agora, num trecho com caminhos entre crases, só os caminhos contam. Número: colisões falsas no `claim` (meta 0).
+- **O `add` diz o ciclo da própria run** (defeito): com uma run retida para o ciclo seguinte, o `add` que fechava o ciclo dizia o número do ciclo novo. Número: ciclos errados no texto do `add` (meta 0).
+- **`gate.py --criteria <tarefa>` avisa só dos ids citados daquela tarefa** (defeito; a docstring já dizia isso): o aviso repetia os ids citados e não definidos do plano inteiro. Número: avisos de ids de outras tarefas (meta 0).
+- **Uma pasta que guarda uma worktree não é sobra** (defeito): o `status` listava como sobra a pasta que contém as worktrees de um script do projeto e mandava parar os processos dela, com essas worktrees em uso. Número: sobras que contêm uma worktree viva (meta 0).
+- **A margem de uso só conta o salto da mesma janela** (defeito): com duas contas no mesmo projeto, o salto de 8% para 55% entre o uso de uma e o da outra virava o custo de uma run, e o `status` mandava esperar 90 horas. Agora o `add` grava quando cada janela reinicia, e só contam os saltos entre runs da mesma janela. Ledgers antigos seguem legíveis: as runs gravadas antes da 1.16.6 só se comparam entre si, e um salto antigo sai da margem depois de cinco saltos novos. Número: esperas de uso sem consumo real (meta 0).
+- **O `status` não pede o heartbeat de uma entrega parada à espera do dono** (defeito): o `autonomous.md` manda apagar o heartbeat quando nada anda sem o dono, e o `status` seguia dizendo "no tick for N min" e mandando recriá-lo. Agora o aviso some depois de uma nota `--validar` mais nova que o último tick, sem nada em voo, e enquanto a varredura de segurança, que espera o dono, é um passo. Número: avisos de heartbeat numa entrega parada para o dono (meta 0).
+
+**Ao atualizar:** nada muda. Contornos que saem, se a sessão os tiver: escrever o `Touches:` só com caminhos; ignorar o aviso de ids citados do `gate.py --criteria`, a sobra de uma pasta com worktrees (como a das partes de um e2e) e a espera de uso que não veio de consumo; recriar o heartbeat numa entrega parada para o dono.
+
 ## 1.16.5 — `qa` e merge na worktree da entrega
 
 - **O `qa` que testou o tip do dev não fica stale** (defeito): num projeto do autor, com a entrega numa worktree própria e o ledger na pasta principal, a run do dev de uma `fix-N` gravava como head o da `main`, que tinha andado; o `qa` que testou o commit da `fix-N` saía stale e o `status` pedia o `qa` de novo. Agora o `qa` só é stale quando nem o head nem o tip da última run do dev estão no commit testado. Número: `qa` stale sobre o tip do dev (meta 0).
