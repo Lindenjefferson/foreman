@@ -246,7 +246,8 @@ status --tick, the heartbeat's call, also records a tick; in autonomous mode, st
 since} once the latest tick (or the latest mode entry, before the first tick) is over 30 minutes old, else null, and
 the text says to check the heartbeat with CronList; never while the delivery is paused (the night over deletes the
 heartbeat, and a resource pause waits on its background command), nor after a VALIDAR note newer than the latest tick
-with nothing in flight (the delivery stopped for the user, and autonomous.md deletes the heartbeat). It is advice, never
+with nothing in flight, nor while the security scan, which waits for the user, is a step (the delivery stopped for the
+user, and autonomous.md deletes the heartbeat). It is advice, never
 pending.
 
 gate records a gate.py run (verdict, failed checks); status --json lists them as gates, for the quality report and the
@@ -2442,7 +2443,8 @@ def status(args):
     report["settings"] = settings(args.ledger, report["scope"], lambda task: touch_items(
         plan_field(text, task, "Touches")) if text else [])
     report["approval"] = standing(args.ledger)
-    report["heartbeat"] = heartbeat(entries, auto)
+    # only the user's security scan left: nothing moves without them, and autonomous.md deletes the heartbeat
+    report["heartbeat"] = None if any(step["step"] == "security" for step in steps) else heartbeat(entries, auto)
     report["after_full_qa"] = after_full(report["full_qa"], args.ledger, report["after_full_run"])
     left = (report["scope"] or {}).get("tasks_left")  # mid-delivery the list is noise; add --full still checks it
     report["full_qa_blockers"] = [] if left else full_qa_blockers(entries, args.ledger)

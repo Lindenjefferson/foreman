@@ -2245,6 +2245,12 @@ check("in autonomous mode the scan waits for the user even with a standing appro
       {"step": "security", "reason": "writes money"} in state["steps"]
       and any("security scan" in item and "note --validar" in item and "PushNotification" in item
               for item in state["pending"]), (state["pending"], state["steps"]))
+aged = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=95)).isoformat(timespec="seconds")
+lines = open(os.path.join(repo, SENS), encoding="utf-8").read().splitlines()
+open(os.path.join(repo, SENS), "w", encoding="utf-8", newline="\n").write("\n".join(
+    json.dumps({**json.loads(line), "at": aged}) if json.loads(line)["type"] == "mode" else line for line in lines) + "\n")
+check("autonomous, only the user's security scan left: no heartbeat warning (nothing moves without them)",
+      status(SENS)["heartbeat"] is None, status(SENS)["heartbeat"])
 run("approve", "--revoke", ledger=SENS)
 run("mode", "supervised", ledger=SENS)
 run("add", "--agent", "reviewer", "--task", "security", "--verdict", "PASS", "--report", report_file("scan.md"),
