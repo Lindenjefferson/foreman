@@ -2301,6 +2301,8 @@ with open(os.path.join(repo, HELDQA), encoding="utf-8") as handle:
 check("a qa of the fix added after a held dev run of the next cycle is not stale: it closes the cycle, and the held "
       "run opens the next", r.returncode == 0 and not qa_runs[-1].get("stale") and state["cycle"] == 2
       and "H5" in state["tasks"], (r.stderr, qa_runs, state["cycle"], state["pending"]))
+check("the qa that closes the cycle names its own cycle, not the one the held run opens", "(cycle 1)" in r.stdout,
+      r.stdout)
 
 LATE = ".superpowers/late-qa.jsonl"
 run("start", "--slug", "late-qa", ledger=LATE)
@@ -2907,6 +2909,9 @@ listed = ("### T1 — a\n\n- **Touches:**\n  - `src/A.java`: what changes\n  - `
 touched = ledger_module.touch_items(ledger_module.plan_field(listed, "T1", "Touches"))
 check("Touches: in bold with its paths in sub-items reads each quoted path, not '*'",
       touched == ["src/A.java", "src/B.java"], touched)
+prose = ledger_module.touch_items("os specs que `e2e:afetados` listar; `src/a.ts` e `src/b.ts`, migration 0039")
+check("a phrase in Touches: keeps only its quoted paths: no prose item, no quoted word that is no path",
+      prose == ["src/a.ts", "src/b.ts", "migration 0039"], prose)
 check("a sub-item with no quoted path is read whole",
       ledger_module.plan_field(listed, "T1", "Depends on") == "none", ledger_module.plan_field(listed, "T1", "Depends on"))
 check("a bold label with a value on its line still reads it", ledger_module.plan_field(listed, "T2", "Touches")

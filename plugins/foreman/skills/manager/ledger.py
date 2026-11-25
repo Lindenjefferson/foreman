@@ -1263,9 +1263,15 @@ def add(args):
     round_number = len(review_loop(read(args.ledger), args.task)) + 1 if is_review(entry) else None
     write(args.ledger, entry)
     label = f"{args.agent}{' ' + args.task if args.task else ''}: {args.verdict}"
-    print(f"{label} (round {round_number})" if is_review(entry)
-          else f"{label} (held for plan cycle {later}: integrate it once this cycle closes)" if later
-          else f"{label} (cycle {len(cycles(read(args.ledger)))})")
+    if is_review(entry) or later:
+        print(f"{label} (round {round_number})" if is_review(entry)
+              else f"{label} (held for plan cycle {later}: integrate it once this cycle closes)")
+        return
+    written = read(args.ledger)
+    # the cycle holding this run: a run that closes a cycle lets a held run open the next one after it
+    last = runs(written)[-1] if runs(written) else None
+    number = next((n for n, group in enumerate(cycles(written), 1) if any(r is last for r in group)), len(cycles(written)))
+    print(f"{label} (cycle {number})")
 
 
 def reviewed_head(args):
@@ -1597,11 +1603,15 @@ def leftovers(entries, ledger, head, testing=False):
 
 
 def touch_items(line):
-    """The items of a Touches: line: each `quoted` path, then each other comma- or semicolon-separated item; a note in
-    parentheses after a space ("(novo)") is no item, while parentheses inside a path stay."""
-    quoted = re.findall(r"`([^`]+)`", line or "")
-    rest = re.sub(r"(^|\s)\([^)]*\)", " ", re.sub(r"`[^`]+`", "", line or ""))
-    items = quoted + [part.strip(" .") for part in re.split(r"[,;]", rest)]
+    """The items of a Touches: line, comma- or semicolon-separated: a `quoted` item, or one with no quotes, read whole;
+    a phrase that quotes inside its words ("the specs `e2e:x` lists", "`a.ts` and `b.ts`") gives only its quoted
+    paths (a / or a .), never its words. A note in parentheses after a space ("(novo)") is no item, while parentheses
+    inside a path stay."""
+    items = []
+    for piece in re.split(r"[,;](?=(?:[^`]*`[^`]*`)*[^`]*$)", line or ""):
+        quoted = re.findall(r"`([^`]+)`", piece)
+        words = re.sub(r"(^|\s)\([^)]*\)", " ", re.sub(r"`[^`]+`", "", piece)).strip(" .")
+        items += [words] if not quoted else quoted if not words else [q for q in quoted if re.search(r"[/.]", q)]
     return [item.strip().removeprefix("./") for item in items if item.strip(" .")]
 
 
