@@ -2522,6 +2522,10 @@ prep_tree = os.path.join(copies, "prep")
 git(proj, "worktree", "add", "-q", "-b", "feat/prep", prep_tree)
 with open(os.path.join(prep_tree, "plan.md"), "w", encoding="utf-8") as handle:
     handle.write("plano da entrega seguinte, ainda sem commit\n")
+part_tree = os.path.join(copies, "partes", "parte-1")  # a project's script keeps its copies one folder down
+git(proj, "worktree", "add", "-q", "--detach", part_tree)
+with open(os.path.join(part_tree, "running.log"), "w", encoding="utf-8") as handle:
+    handle.write("e2e em andamento\n")
 r = run("status", "--json", cwd=proj)
 left = json.loads(r.stdout).get("leftovers") if r.returncode == 0 else None
 norm = lambda path: os.path.normcase(os.path.realpath(path))
@@ -2536,6 +2540,8 @@ check("a claimed worktree, a task not integrated, the delivery branch and a bran
 check("the output folder of a copy still there (<copy>-saida, as the kickoff template names it) is no leftover",
       not any(os.path.basename(item.get("path") or "").startswith(("held-saida", "open-saida")) for item in left or []),
       left)
+check("a folder that holds a worktree is no leftover folder", not any(
+    norm(item.get("path") or "") == norm(os.path.join(copies, "partes")) for item in left or []), left)
 check("a worktree with files not yet committed (the next delivery's spec and plan) and its branch are no leftover, "
       "even with no commit past the head",
       not any(item.get("branch") == "feat/prep" or norm(item.get("path") or "") == norm(prep_tree)

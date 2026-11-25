@@ -1581,7 +1581,9 @@ def leftovers(entries, ledger, head, testing=False):
         owner = os.path.join(copies, name.partition("-saida")[0]) if "-saida" in name else None
         if owner and (testing or norm(owner) in trees):
             continue  # the output folder of a copy still there goes with it; one with no copy, with its agent's add
-        if os.path.isdir(path) and norm(path) not in trees and not os.path.exists(os.path.join(path, ".git")):
+        inside = norm(path) + os.sep  # a folder holding a worktree (a script's copies one level down) is that work
+        if os.path.isdir(path) and norm(path) not in trees and not os.path.exists(os.path.join(path, ".git")) \
+                and not any(tree.startswith(inside) for tree in trees):
             found.append({"kind": "folder", "path": path, "branch": None,
                           "action": STOP_FIRST + "delete the folder"})
     running = processes() if found else []
