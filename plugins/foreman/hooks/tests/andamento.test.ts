@@ -44,6 +44,7 @@ function stubs(on, found, log = { runs: 0, mtime: 1 }, pythons = ['python']) {
   const clock = mock.clock(on, { now: NOW })
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
+  on('session.id', () => ({ value: 's-1' }))
   on('command.register', () => ({ value: undefined }))
   on('fs.stat', () => ({ value: { kind: 'file', size: 10, mtimeMs: log.mtime, isLink: false } }))
   on('process.run', ($, e) => {
@@ -341,7 +342,7 @@ test('at start and on each measure the subscription usage goes to usage.json bes
   const clock = stubs(on, STATUS, log)
   await start($, clock)
   expect(log.writes.length).toBe(1)
-  expect(log.writes[0].path.replaceAll('\\', '/')).toMatch(/\/work\/\.superpowers\/usage\.json$/)
+  expect(log.writes[0].path.replaceAll('\\', '/')).toMatch(/\/work\/\.superpowers\/usage-s-1\.json$/)
   expect(log.writes[0].data.windows).toEqual(WINDOWS)
   expect(new Date(log.writes[0].data.at).toISOString()).toBe(new Date(NOW).toISOString())
   log.rateLimits = [{ ...FIVE, percentUsed: 90 }, WEEK, { kind: 'spend_limit', percentUsed: 12, resetsAt: '2026-11-01T00:00:00Z' }]

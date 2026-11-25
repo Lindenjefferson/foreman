@@ -1192,6 +1192,16 @@ check("no usage.json and no Sempre econômico: usage is null and the cycle is un
       state["usage"] is None and state["ready_for_gate"] is True and "usage" not in lines_of(ledger)[1],
       state.get("usage"))
 check("no usage.json: the text has no usage line", "usage:" not in run("status", ledger=ledger).stdout)
+# two accounts in one project: each session's mod writes usage-<session id>.json, and ledger.py reads its own
+ledger = usage_case("own-session", {"seven_day": window(8, 100)})
+with open(os.path.join(repo, "u", "own-session", ".superpowers", "usage-s-own.json"), "w", encoding="utf-8") as handle:
+    handle.write(json.dumps({"at": stamp(0), "windows": {"seven_day": window(55, 100)}}))
+own = subprocess.run([sys.executable, LEDGER, "--ledger", ledger, "status"], cwd=repo, capture_output=True, text=True,
+                     encoding="utf-8", env={**os.environ, "CLAUDE_CODE_SESSION_ID": "s-own"}).stdout
+alone = subprocess.run([sys.executable, LEDGER, "--ledger", ledger, "status"], cwd=repo, capture_output=True,
+                       text=True, encoding="utf-8", env={**os.environ, "CLAUDE_CODE_SESSION_ID": "s-new"}).stdout
+check("status reads the usage of its own session's file, else usage.json (older mods, a session with none yet)",
+      "week 55%" in own and "week 8%" in alone, (own, alone))
 
 got = advice("low", {"five_hour": window(59), "seven_day": window(59)})
 check("under every default threshold: windows as read, no economy, no wait",
@@ -3522,6 +3532,28 @@ recorded = [json.loads(line) for line in open(fq_ledger, encoding="utf-8")][-1]
 check("a qa that tested the dev's tip in the delivery's own worktree is not stale",
       r.returncode == 0 and r2.returncode == 0 and recorded.get("agent") == "qa" and not recorded.get("stale"),
       (r.stderr, r2.stderr, recorded))
+
+# the ledger in the main folder, back on main, and the delivery branch in a worktree of its own: start records the
+# branch, and the runs read its head, not main's
+bh = os.path.join(repo, "branch-head")
+bh_tree = os.path.join(repo, "branch-head-tree")
+for command in (["init", "-q", "-b", "main", bh], ["-C", bh, "commit", "-q", "--allow-empty", "-m", "base"],
+                ["-C", bh, "switch", "-q", "-c", "feat/bh"]):
+    subprocess.run(["git", *command], check=True, capture_output=True)
+bh_ledger = os.path.join(bh, ".superpowers", "ledger.jsonl")
+r = subprocess.run([sys.executable, LEDGER, "--ledger", bh_ledger, "start", "--slug", "bh", "--base", "main"], cwd=bh,
+                   capture_output=True, text=True, encoding="utf-8")
+for command in (["-C", bh, "switch", "-q", "main"], ["-C", bh, "worktree", "add", "-q", bh_tree, "feat/bh"],
+                ["-C", bh, "commit", "-q", "--allow-empty", "-m", "main moves on"],
+                ["-C", bh_tree, "commit", "-q", "--allow-empty", "-m", "T1"]):
+    subprocess.run(["git", *command], check=True, capture_output=True)
+tip = subprocess.run(["git", "rev-parse", "feat/bh"], cwd=bh, capture_output=True, text=True).stdout.strip()
+r2 = subprocess.run([sys.executable, LEDGER, "--ledger", bh_ledger, "add", "--agent", "dev", "--task", "T1",
+                     "--verdict", "DONE"], cwd=bh, capture_output=True, text=True, encoding="utf-8")
+written = [json.loads(line) for line in open(bh_ledger, encoding="utf-8")]
+check("start records the delivery branch, and a run read from the main folder on main takes the branch's head",
+      r.returncode == 0 and written[0].get("branch") == "feat/bh" and written[-1].get("head") == tip,
+      (r.stderr, r2.stderr, written[0], written[-1]))
 
 print("ALL PASS" if all(results) else "SOME FAILED", f"({sum(results)}/{len(results)})")
 sys.exit(0 if all(results) else 1)

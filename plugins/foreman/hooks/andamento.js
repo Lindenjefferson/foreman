@@ -12,7 +12,7 @@
 // stays in ledger.py (its steps and scope): this file only lays them out. It checks the ledger file every 5 s and
 // runs ledger.py again only when the file changed, or once a minute (every 5 minutes while there is no ledger file).
 // It runs ledger.py with the first of python and python3 that is Python 3, as hooks/python.sh does. It also writes
-// the account's rate-limit windows to usage.json beside the ledger (on session.measure, only when they changed;
+// the account's rate-limit windows to usage-<session id>.json beside the ledger (on session.measure, only when they changed;
 // advice for ledger.py, whose `usage` it shows: econômico, the wait for a reset, the pane's usage line). A ledger.py
 // failure (a broken ledger, no Python 3) shows in the band and the pane instead of passing for "no delivery". What
 // other mods draw on that line stays above the rows, with it.
@@ -353,7 +353,8 @@ function stamp(iso) {
   return Number.isNaN(at.getTime()) ? null : at.toISOString()
 }
 
-// usage.json beside the ledger: the windows {kind: {percent, resets_at}} and when they were read. Nothing without a
+// usage-<session id>.json beside the ledger (one per session: two accounts may work in one project, and ledger.py
+// reads its own session's): the windows {kind: {percent, resets_at}} and when they were read. Nothing without a
 // ledger file or without windows (an API key); nothing when only the time changed. A window with no usable reset time
 // is left out: ledger.py would never expire it. Never throws.
 async function writeUsage($) {
@@ -368,7 +369,8 @@ async function writeUsage($) {
     if (!Object.keys(windows).length || body === written) return
     const folder = watched.slice(0, Math.max(watched.lastIndexOf('/'), watched.lastIndexOf('\\')) + 1)
     const at = new Date(await $.clock.now()).toISOString()
-    await $.fs.write(`${folder}usage.json`, JSON.stringify({ at, windows }))
+    // shortcut: one small file per session is left in .superpowers/, cleared by hand if they ever pile up
+    await $.fs.write(`${folder}usage-${await $.session.id()}.json`, JSON.stringify({ at, windows }))
     written = body
   } catch {}
 }
