@@ -245,7 +245,10 @@ report tested, else the HEAD of the ledger's checkout, which may be another deli
 status --tick, the heartbeat's call, also records a tick; in autonomous mode, status --json gives heartbeat: {minutes,
 since} once the latest tick (or the latest mode entry, before the first tick) is over 30 minutes old, else null, and
 the text says to check the heartbeat with CronList; never while the delivery is paused (the night over deletes the
-heartbeat, and a resource pause waits on its background command). It is advice, never pending.
+heartbeat, and a resource pause waits on its background command), nor after a VALIDAR note newer than the latest tick
+with nothing in flight, nor while the security scan, which waits for the user, is a step (the delivery stopped for the
+user, and autonomous.md deletes the heartbeat). It is advice, never
+pending.
 
 gate records a gate.py run (verdict, failed checks); status --json lists them as gates, for the quality report and the
 analysis of where the time went.
@@ -351,10 +354,12 @@ status --json gives usage: {windows, economy, wait} or null: economy is the reas
 threshold, or Sempre econômico) or null; wait is the window whose percent plus its margin is at or above its pause
 threshold (the one that resets later when both are) or null: {window, percent, margin, resets_at, seconds_left}.
 
-The margin is the largest of the last 5 positive deltas between consecutive usage snapshots of the runs (a negative
-delta is a reset, skipped; 0 with none), the room the next run may use. seconds_left, from now, is null when resets_at
-is; the text line ends with "until <resets_at> (in 2h13m)". It is advice for the manager, never pending: pending,
-steps and ready_for_gate do not change. Every add records the valid windows' percent as usage.
+The margin is the largest of the last 5 positive deltas between consecutive usage snapshots of the runs of the same
+window, the one that resets at the same time within 10 minutes (a negative delta is a reset, skipped; a snapshot of
+another window, such as another account's session writing usage.json in the same folder, is no delta; 0 with none),
+the room the next run may use. seconds_left, from now, is null when resets_at is; the text line ends with "until
+<resets_at> (in 2h13m)". It is advice for the manager, never pending: pending, steps and ready_for_gate do not change.
+Every add records the valid windows' percent as usage and their resets_at as usage_resets.
 
 Diff size and line metrics
 --------------------------
@@ -1087,16 +1092,26 @@ def reset_at(item):
 
 
 def usage_margins(entries):
-    """Per window, the largest of the last 5 positive deltas between consecutive usage snapshots of the runs (a
-    negative delta is a reset in between); 0 with none."""
+    """Per window, the largest of the last 5 positive deltas between consecutive usage snapshots of the runs of the
+    same window, the one resetting at the same time within 10 minutes (a negative delta is a reset in between; a
+    snapshot of another account's window is no delta); 0 with none. A run with no usage_resets (older ledgers) pairs
+    only with another such run."""
     last, deltas = {}, {}
     for entry in runs(entries):
+        resets = entry.get("usage_resets") or {}
         for name, percent in (entry.get("usage") or {}).items():
             if isinstance(percent, bool) or not isinstance(percent, (int, float)):
                 continue
-            if name in last and percent > last[name]:
-                deltas.setdefault(name, []).append(percent - last[name])
-            last[name] = percent
+            reset = reset_at({"resets_at": resets.get(name)}) if "usage_resets" in entry else "unknown"
+            seen = last.setdefault(name, [])
+            same = next((pair for pair in reversed(seen) if pair[0] == reset or (
+                isinstance(pair[0], datetime.datetime) and isinstance(reset, datetime.datetime)
+                and abs((pair[0] - reset).total_seconds()) <= 600)), None)
+            if same and percent > same[1]:
+                deltas.setdefault(name, []).append(percent - same[1])
+            if same:
+                seen.remove(same)
+            seen.append((reset, percent))
     return {name: max(found[-5:]) for name, found in deltas.items()}
 
 
@@ -1256,6 +1271,7 @@ def add(args):
     windows = usage_windows(args.ledger)[0]
     if windows:
         entry["usage"] = {name: item["percent"] for name, item in windows.items()}
+        entry["usage_resets"] = {name: item.get("resets_at") for name, item in windows.items()}
     if NEEDS_INTERFACE and entries[0].get("interface") is False and not any(
             item["type"] == "interface" for item in entries):
         write(args.ledger, {"type": "interface"})  # when the line was first seen: the cycle open then needs it
@@ -1263,9 +1279,15 @@ def add(args):
     round_number = len(review_loop(read(args.ledger), args.task)) + 1 if is_review(entry) else None
     write(args.ledger, entry)
     label = f"{args.agent}{' ' + args.task if args.task else ''}: {args.verdict}"
-    print(f"{label} (round {round_number})" if is_review(entry)
-          else f"{label} (held for plan cycle {later}: integrate it once this cycle closes)" if later
-          else f"{label} (cycle {len(cycles(read(args.ledger)))})")
+    if is_review(entry) or later:
+        print(f"{label} (round {round_number})" if is_review(entry)
+              else f"{label} (held for plan cycle {later}: integrate it once this cycle closes)")
+        return
+    written = read(args.ledger)
+    # the cycle holding this run: a run that closes a cycle lets a held run open the next one after it
+    last = runs(written)[-1] if runs(written) else None
+    number = next((n for n, group in enumerate(cycles(written), 1) if any(r is last for r in group)), len(cycles(written)))
+    print(f"{label} (cycle {number})")
 
 
 def reviewed_head(args):
@@ -1286,7 +1308,9 @@ HEARTBEAT_MINUTES = 30
 def heartbeat(entries, auto):
     """In autonomous mode, how long since the latest tick (or mode entry): {minutes, since} past 30, else None."""
     marks = [entry["at"] for entry in entries if entry["type"] in ("tick", "mode") and entry.get("at")]
-    if not auto or not marks or paused(entries):
+    stopped = [entry["at"] for entry in entries if entry["type"] == "note" and entry.get("validar") and entry.get("at")]
+    # stopped on a VALIDAR note with nothing in flight: autonomous.md deletes the heartbeat there
+    if not auto or not marks or paused(entries) or (stopped and stopped[-1] > marks[-1] and not claims(entries)):
         return None
     try:
         since = datetime.datetime.fromisoformat(marks[-1])
@@ -1575,7 +1599,9 @@ def leftovers(entries, ledger, head, testing=False):
         owner = os.path.join(copies, name.partition("-saida")[0]) if "-saida" in name else None
         if owner and (testing or norm(owner) in trees):
             continue  # the output folder of a copy still there goes with it; one with no copy, with its agent's add
-        if os.path.isdir(path) and norm(path) not in trees and not os.path.exists(os.path.join(path, ".git")):
+        inside = norm(path) + os.sep  # a folder holding a worktree (a script's copies one level down) is that work
+        if os.path.isdir(path) and norm(path) not in trees and not os.path.exists(os.path.join(path, ".git")) \
+                and not any(tree.startswith(inside) for tree in trees):
             found.append({"kind": "folder", "path": path, "branch": None,
                           "action": STOP_FIRST + "delete the folder"})
     running = processes() if found else []
@@ -1597,11 +1623,15 @@ def leftovers(entries, ledger, head, testing=False):
 
 
 def touch_items(line):
-    """The items of a Touches: line: each `quoted` path, then each other comma- or semicolon-separated item; a note in
-    parentheses after a space ("(novo)") is no item, while parentheses inside a path stay."""
-    quoted = re.findall(r"`([^`]+)`", line or "")
-    rest = re.sub(r"(^|\s)\([^)]*\)", " ", re.sub(r"`[^`]+`", "", line or ""))
-    items = quoted + [part.strip(" .") for part in re.split(r"[,;]", rest)]
+    """The items of a Touches: line, comma- or semicolon-separated: a `quoted` item, or one with no quotes, read whole;
+    a phrase that quotes inside its words ("the specs `e2e:x` lists", "`a.ts` and `b.ts`") gives only its quoted
+    paths (a / or a .), never its words. A note in parentheses after a space ("(novo)") is no item, while parentheses
+    inside a path stay."""
+    items = []
+    for piece in re.split(r"[,;](?=(?:[^`]*`[^`]*`)*[^`]*$)", line or ""):
+        quoted = re.findall(r"`([^`]+)`", piece)
+        words = re.sub(r"(^|\s)\([^)]*\)", " ", re.sub(r"`[^`]+`", "", piece)).strip(" .")
+        items += [words] if not quoted else quoted if not words else [q for q in quoted if re.search(r"[/.]", q)]
     return [item.strip().removeprefix("./") for item in items if item.strip(" .")]
 
 
@@ -2413,7 +2443,8 @@ def status(args):
     report["settings"] = settings(args.ledger, report["scope"], lambda task: touch_items(
         plan_field(text, task, "Touches")) if text else [])
     report["approval"] = standing(args.ledger)
-    report["heartbeat"] = heartbeat(entries, auto)
+    # only the user's security scan left: nothing moves without them, and autonomous.md deletes the heartbeat
+    report["heartbeat"] = None if any(step["step"] == "security" for step in steps) else heartbeat(entries, auto)
     report["after_full_qa"] = after_full(report["full_qa"], args.ledger, report["after_full_run"])
     left = (report["scope"] or {}).get("tasks_left")  # mid-delivery the list is noise; add --full still checks it
     report["full_qa_blockers"] = [] if left else full_qa_blockers(entries, args.ledger)

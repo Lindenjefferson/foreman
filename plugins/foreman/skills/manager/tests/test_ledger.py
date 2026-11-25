@@ -1369,6 +1369,24 @@ state = margin_case("mg6", [10, 40, 41, 41, 30, 32, 33], 83)
 check("zero and negative deltas are skipped; the last 5 positive deltas are 1, 1, 2, 1 and 30",
       state["usage"]["wait"]["margin"] == 30, state["usage"])
 
+def usage_margins_of(ledger):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ledger_margins", LEDGER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.usage_margins(module.read(os.path.join(repo, ledger)))
+
+
+ledger = usage_case("acct", {"seven_day": window(53, 90)})
+for percent, hours in ((53, 90), (8, 150), (8, 150), (55, 90)):  # another account's session wrote usage.json between
+    with open(os.path.join(repo, "u", "acct", ".superpowers", "usage.json"), "w", encoding="utf-8") as handle:
+        json.dump({"windows": {"seven_day": window(percent, hours)}}, handle)
+    add("reviewer", "PASS", ledger=ledger)
+state = status(ledger)
+check("a jump between snapshots of two windows (another account's usage.json in between) is no per-run margin: "
+      "53 to 55 of the same window is", state["usage"]["wait"] is None and usage_margins_of(ledger) == {"seven_day": 2},
+      (state["usage"], usage_margins_of(ledger)))
+
 state = margin_case("sl1", [10], 90, hours=2.2)
 wait = state["usage"]["wait"]
 text = run("status", ledger="u/sl1/.superpowers/ledger.jsonl").stdout
@@ -2227,6 +2245,12 @@ check("in autonomous mode the scan waits for the user even with a standing appro
       {"step": "security", "reason": "writes money"} in state["steps"]
       and any("security scan" in item and "note --validar" in item and "PushNotification" in item
               for item in state["pending"]), (state["pending"], state["steps"]))
+aged = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=95)).isoformat(timespec="seconds")
+lines = open(os.path.join(repo, SENS), encoding="utf-8").read().splitlines()
+open(os.path.join(repo, SENS), "w", encoding="utf-8", newline="\n").write("\n".join(
+    json.dumps({**json.loads(line), "at": aged}) if json.loads(line)["type"] == "mode" else line for line in lines) + "\n")
+check("autonomous, only the user's security scan left: no heartbeat warning (nothing moves without them)",
+      status(SENS)["heartbeat"] is None, status(SENS)["heartbeat"])
 run("approve", "--revoke", ledger=SENS)
 run("mode", "supervised", ledger=SENS)
 run("add", "--agent", "reviewer", "--task", "security", "--verdict", "PASS", "--report", report_file("scan.md"),
@@ -2301,6 +2325,8 @@ with open(os.path.join(repo, HELDQA), encoding="utf-8") as handle:
 check("a qa of the fix added after a held dev run of the next cycle is not stale: it closes the cycle, and the held "
       "run opens the next", r.returncode == 0 and not qa_runs[-1].get("stale") and state["cycle"] == 2
       and "H5" in state["tasks"], (r.stderr, qa_runs, state["cycle"], state["pending"]))
+check("the qa that closes the cycle names its own cycle, not the one the held run opens", "(cycle 1)" in r.stdout,
+      r.stdout)
 
 LATE = ".superpowers/late-qa.jsonl"
 run("start", "--slug", "late-qa", ledger=LATE)
@@ -2520,6 +2546,10 @@ prep_tree = os.path.join(copies, "prep")
 git(proj, "worktree", "add", "-q", "-b", "feat/prep", prep_tree)
 with open(os.path.join(prep_tree, "plan.md"), "w", encoding="utf-8") as handle:
     handle.write("plano da entrega seguinte, ainda sem commit\n")
+part_tree = os.path.join(copies, "partes", "parte-1")  # a project's script keeps its copies one folder down
+git(proj, "worktree", "add", "-q", "--detach", part_tree)
+with open(os.path.join(part_tree, "running.log"), "w", encoding="utf-8") as handle:
+    handle.write("e2e em andamento\n")
 r = run("status", "--json", cwd=proj)
 left = json.loads(r.stdout).get("leftovers") if r.returncode == 0 else None
 norm = lambda path: os.path.normcase(os.path.realpath(path))
@@ -2534,6 +2564,8 @@ check("a claimed worktree, a task not integrated, the delivery branch and a bran
 check("the output folder of a copy still there (<copy>-saida, as the kickoff template names it) is no leftover",
       not any(os.path.basename(item.get("path") or "").startswith(("held-saida", "open-saida")) for item in left or []),
       left)
+check("a folder that holds a worktree is no leftover folder", not any(
+    norm(item.get("path") or "") == norm(os.path.join(copies, "partes")) for item in left or []), left)
 check("a worktree with files not yet committed (the next delivery's spec and plan) and its branch are no leftover, "
       "even with no commit past the head",
       not any(item.get("branch") == "feat/prep" or norm(item.get("path") or "") == norm(prep_tree)
@@ -2806,6 +2838,10 @@ check("a paused delivery gives no heartbeat warning (the night over deletes the 
       status(TRACE)["heartbeat"] is None and "CronList" not in run("status", ledger=TRACE).stdout,
       status(TRACE)["heartbeat"])
 run("resume", ledger=TRACE)
+run("note", "--text", "waits on the owner", "--validar", "--recommend", "accept", ledger=TRACE)
+check("a delivery stopped on a VALIDAR note, nothing in flight: no heartbeat warning (the rule deletes the heartbeat)",
+      status(TRACE)["heartbeat"] is None, status(TRACE)["heartbeat"])
+run("status", "--tick", ledger=TRACE)
 
 # The gate's verdict goes in the ledger
 r = run("gate", "--verdict", "NOT_READY", "--failed", "Ledger,Docs", ledger=TRACE)
@@ -2907,6 +2943,9 @@ listed = ("### T1 — a\n\n- **Touches:**\n  - `src/A.java`: what changes\n  - `
 touched = ledger_module.touch_items(ledger_module.plan_field(listed, "T1", "Touches"))
 check("Touches: in bold with its paths in sub-items reads each quoted path, not '*'",
       touched == ["src/A.java", "src/B.java"], touched)
+prose = ledger_module.touch_items("os specs que `e2e:afetados` listar; `src/a.ts` e `src/b.ts`, migration 0039")
+check("a phrase in Touches: keeps only its quoted paths: no prose item, no quoted word that is no path",
+      prose == ["src/a.ts", "src/b.ts", "migration 0039"], prose)
 check("a sub-item with no quoted path is read whole",
       ledger_module.plan_field(listed, "T1", "Depends on") == "none", ledger_module.plan_field(listed, "T1", "Depends on"))
 check("a bold label with a value on its line still reads it", ledger_module.plan_field(listed, "T2", "Touches")

@@ -6,7 +6,7 @@
   gate.py --docs                                  only the Docs check, against the tree, with no ledger; exits 0 or 1
 
 A criterion is an id that opens a list item of the plan (- AC-T3-2, * **AC-T3-2**, 1. `AC-T3-2`, - [ ] AC-T3-2); an
-id written anywhere else is cited, a warning ("cited, never defined") and never traced, and a plan where no id opens a list
+id written anywhere else is cited, a warning ("cited, never defined", with --criteria only the task's) and never traced, and a plan where no id opens a list
 item is read as before, every id a criterion (one opening an item of the plan's ## Errata too, as a fix round's
 criteria). A task's criteria, for --criteria, are those with a segment that is the
 task id or ends with it right after a digit (AC-T3-2, AC-PL-T3-2 and AC-074T3-2 are T3's; AC-T31-2 is not), and,
@@ -665,7 +665,7 @@ def traceability(plan, base="", task=None):
               "template, not a criterion, and the gate traces no test for it")
     defined = sorted(set(DEFINED.findall(text)))
     if defined:
-        cited = [item for item in ids if item not in defined]
+        cited = [item for item in ids if item not in defined and (not task or of_task(item, task))]
         if cited:
             warn(f"{plan}: cited, never defined: {', '.join(cited)} (a criterion is the id that opens a "
                   "list item; the gate traces no test for these)")

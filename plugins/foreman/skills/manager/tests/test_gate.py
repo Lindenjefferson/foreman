@@ -209,6 +209,9 @@ commit("plan.md", IDS + "The ids carry the prefix `AC-074T`; AC-T9-9 of the old 
 r = gate("--base", "main")
 check("an id that opens no list item is cited, not defined: a warning naming each, not a criterion with no test",
       "Criteria:   PASS" in r.stdout and "cited, never defined: AC-074T, AC-T9-9, AC-U1-2" in r.stdout, r.stdout)
+r, r9 = gate("--criteria", "T1"), gate("--criteria", "T9")
+check("--criteria <task> warns only of the cited ids of that task", "cited, never defined" not in r.stdout + r.stderr
+      and "cited, never defined: AC-T9-9 " in r9.stdout + r9.stderr, (r.stdout, r.stderr, r9.stdout, r9.stderr))
 commit("plan.md", "# plan\n- **AC-T1-1** Given a.\n* `AC-T1-2` Given x.\n1. **`AC-T1.3`** Given y.\n- AC-T7-1 Given z.\n"
        "## Errata\n", "docs: ids defined in bold, code and numbered items")
 r = gate("--base", "main")
